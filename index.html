@@ -492,7 +492,9 @@ function preloadLibraries() {
 
   /* ===== 镜头总表（按描述拆分 / 去重计数） ===== */
   .shot-summary { margin-top: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
-  .shot-summary-header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; font-weight: 700; font-size: 15px; border-bottom: 1px solid var(--border); background: var(--primary-bg); }
+  .shot-summary-header { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px 16px; font-weight: 700; font-size: 15px; border-bottom: 1px solid var(--border); background: var(--primary-bg); }
+  .shot-summary-title { display: flex; align-items: center; gap: 8px; }
+  .shot-summary-meta { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 8px; }
   .shot-summary-header .summary-sub { font-size: 12px; font-weight: 400; color: var(--text-light); }
   .shot-summary-table { width: 100%; border-collapse: collapse; font-size: 14px; }
   .shot-summary-table th, .shot-summary-table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
@@ -839,7 +841,7 @@ let pendingAction = null;      // 待执行的操作（用于替换确认后执�
 let pendingWriteVideo = null;  // 镜头编写面板待添加的参考视频文件
 
 // ===== 会员 / 使用额度 =====
-let isMember = true;             // 公网版：永久解锁（无限使用）
+let isMember = true;             // 公网版永久解锁会员
 let useCountShotWrite = 0;       // 「镜头编写」使用次数（非会员上限 FREE_LIMIT）
 let useCountExcelImport = 0;     // 「Excel 导入」使用次数（非会员上限 FREE_LIMIT）
 const FREE_LIMIT = 3;            // 非会员免费额度
@@ -896,7 +898,7 @@ function loadData() {
     const sd = localStorage.getItem('vp_summary_done');
     if (sd) { try { summaryDone = JSON.parse(sd) || {}; } catch(e) { summaryDone = {}; } }
     // 会员 / 额度
-    isMember = true; // 公网版：永久解锁
+    isMember = true; // 公网版永久解锁会员
     const us = localStorage.getItem('vp_use_shot'); if (us != null) useCountShotWrite = parseInt(us) || 0;
     const ue = localStorage.getItem('vp_use_excel'); if (ue != null) useCountExcelImport = parseInt(ue) || 0;
   } catch(e) { scriptText = ''; shots = []; currentStage = 0; scriptSource = ''; excelData = null; globalEditTasks = { editCut: false, editColor: false, editSound: false }; summaryDone = {}; isMember = true; useCountShotWrite = 0; useCountExcelImport = 0; }
@@ -1436,9 +1438,12 @@ function buildShotSummary(items, pct) {
     ? '<table class="shot-summary-table"><thead><tr><th class="col-no">序号</th><th>镜头</th><th class="col-count">次数</th><th class="col-done">完成</th></tr></thead><tbody>' + rows + '</tbody></table>'
     : '<div class="shot-summary-empty">' + (kw ? '未找到包含「' + escapeHtml(summarySearchKeyword) + '」的镜头名称' : noVoiceHint) + '</div>';
   return '<div class="shot-summary">'
-    + '<div class="shot-summary-header">📋 镜头总表'
-      + '<span class="summary-sub">' + classes + ' 类镜头 · 共 ' + total + ' 次 · 已完成 ' + doneWeighted + ' 次</span>'
-      + '<span class="shot-summary-pct">' + pctVal + '%</span>'
+    + '<div class="shot-summary-header">'
+      + '<div class="shot-summary-title">📋 镜头总表</div>'
+      + '<div class="shot-summary-meta">'
+        + '<span class="summary-sub">' + classes + ' 类镜头 · 共 ' + total + ' 次 · 已完成 ' + doneWeighted + ' 次</span>'
+        + '<span class="shot-summary-pct">' + pctVal + '%</span>'
+      + '</div>'
     + '</div>'
     + '<div class="shot-summary-progress"><i style="width:' + pctVal + '%"></i></div>'
     + body
