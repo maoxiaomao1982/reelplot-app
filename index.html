@@ -839,7 +839,7 @@ let pendingAction = null;      // 待执行的操作（用于替换确认后执�
 let pendingWriteVideo = null;  // 镜头编写面板待添加的参考视频文件
 
 // ===== 会员 / 使用额度 =====
-let isMember = false;            // 会员状态（会员无限使用）
+let isMember = true;             // 公网版：永久解锁（无限使用）
 let useCountShotWrite = 0;       // 「镜头编写」使用次数（非会员上限 FREE_LIMIT）
 let useCountExcelImport = 0;     // 「Excel 导入」使用次数（非会员上限 FREE_LIMIT）
 const FREE_LIMIT = 3;            // 非会员免费额度
@@ -896,10 +896,10 @@ function loadData() {
     const sd = localStorage.getItem('vp_summary_done');
     if (sd) { try { summaryDone = JSON.parse(sd) || {}; } catch(e) { summaryDone = {}; } }
     // 会员 / 额度
-    isMember = localStorage.getItem('vp_is_member') === '1';
+    isMember = true; // 公网版：永久解锁
     const us = localStorage.getItem('vp_use_shot'); if (us != null) useCountShotWrite = parseInt(us) || 0;
     const ue = localStorage.getItem('vp_use_excel'); if (ue != null) useCountExcelImport = parseInt(ue) || 0;
-  } catch(e) { scriptText = ''; shots = []; currentStage = 0; scriptSource = ''; excelData = null; globalEditTasks = { editCut: false, editColor: false, editSound: false }; summaryDone = {}; isMember = false; useCountShotWrite = 0; useCountExcelImport = 0; }
+  } catch(e) { scriptText = ''; shots = []; currentStage = 0; scriptSource = ''; excelData = null; globalEditTasks = { editCut: false, editColor: false, editSound: false }; summaryDone = {}; isMember = true; useCountShotWrite = 0; useCountExcelImport = 0; }
 }
 
 // ===== Stepper =====
