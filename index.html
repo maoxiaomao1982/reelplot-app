@@ -1463,6 +1463,18 @@ function toggleSummaryDone(enc, checked) {
   if (checked) summaryDone[shot] = true; else delete summaryDone[shot];
   saveData();
   renderShotSummary(); // 仅重渲染镜头总表：实时刷新百分比/计数，且停留在当前勾选位置，不滚动、不跳转
+  // 镜头总表达到 100%（按总次数加权）时自动跳转剪辑阶段，与镜头拆解 100% 的行为保持一致
+  if (currentStage === 1) {
+    const sp = computeSummaryPct(getShootItems());
+    if (sp.total > 0 && sp.doneWeighted === sp.total) {
+      if (!autoJumpGuard) {
+        autoJumpGuard = true;
+        goToStage(2);
+      }
+    } else {
+      autoJumpGuard = false; // 离开 100% 后复位，允许下次再次触发
+    }
+  }
 }
 
 function renderShootStage() {
