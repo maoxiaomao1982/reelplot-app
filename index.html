@@ -692,6 +692,9 @@ function preloadLibraries() {
         <label class="view-filter-item"><input type="checkbox" id="view-breakdown-chk" onchange="onToggleView('breakdown', this.checked)"> 只显示镜头拆解</label>
         <label class="view-filter-item"><input type="checkbox" id="view-summary-chk" onchange="onToggleView('summary', this.checked)"> 只显示镜头总表</label>
       </div>
+      <div class="shoot-view-filter" style="margin-top:8px;">
+        <label class="view-filter-item"><input type="checkbox" id="view-undone-chk" onchange="onToggleUndone(this.checked)"> 未完成镜头</label>
+      </div>
     </div>
     <div class="section-title" id="shoot-breakdown-title">🎥 拍摄阶段 — 镜头拆解</div>
     <div class="progress-container" id="shoot-breakdown-progress">
@@ -1397,7 +1400,7 @@ function renderExcelInfo() {
 // 拍摄阶段底部：镜头总表
 // 将各镜头卡片的「镜头描述」按 "/" 拆分为多个镜头；内容相同则去重并累加次数；
 // 序号按去重后的镜头数依次向后（1,2,3...），顺序为首次出现顺序。
-function buildShotSummary(items, pct) {
+function buildShotSummary(items, pct, undoneOnly) {
   const kw = (summarySearchKeyword || '').toLowerCase(); // 镜头总表专用搜索：按镜头名称片段过滤
   const map = new Map(); // 镜头内容 -> 次数（保持首次出现顺序）
   items.forEach(function (it) {
@@ -1416,6 +1419,7 @@ function buildShotSummary(items, pct) {
   let total = 0, doneWeighted = 0;
   map.forEach(function (count, shot) {
     const done = !!summaryDone[shot];
+    if (undoneOnly && done) return; // 只显示未完成镜头时跳过已完成的镜头
     total += count;
     if (done) doneWeighted += count;
     rows += '<tr' + (done ? ' class="row-done"' : '') + '>'
@@ -1426,7 +1430,7 @@ function buildShotSummary(items, pct) {
       + '</tr>';
     no++;
   });
-  const classes = map.size;
+  const classes = undoneOnly ? no - 1 : map.size;
   // 百分比按当前显示的（已按关键词过滤的）镜头片段加权计算，与表格行一致
   const pctVal = total > 0 ? Math.round((doneWeighted / total) * 100) : 0;
   // 空状态文案：区分「无镜头卡片 / 全部缺口播」与「关键词无命中」三种情况
@@ -1434,9 +1438,10 @@ function buildShotSummary(items, pct) {
   const noVoiceHint = (items.length > 0 && !hasVoiceItems)
     ? '当前镜头均缺少「镜头描述」，镜头描述为空不计入镜头（填写镜头描述后才会生成镜头）'
     : '暂无镜头描述（在镜头卡片的「镜头描述」中用「/」分隔多个镜头即可自动拆分统计）';
+  const emptyHint = undoneOnly ? '暂无未完成镜头（镜头总表中的镜头均已勾选完成）' : noVoiceHint;
   const body = rows
     ? '<table class="shot-summary-table"><thead><tr><th class="col-no">序号</th><th>镜头</th><th class="col-count">次数</th><th class="col-done">完成</th></tr></thead><tbody>' + rows + '</tbody></table>'
-    : '<div class="shot-summary-empty">' + (kw ? '未找到包含「' + escapeHtml(summarySearchKeyword) + '」的镜头名称' : noVoiceHint) + '</div>';
+    : '<div class="shot-summary-empty">' + (kw ? '未找到包含「' + escapeHtml(summarySearchKeyword) + '」的镜头名称' : emptyHint) + '</div>';
   return '<div class="shot-summary">'
     + '<div class="shot-summary-header">'
       + '<div class="shot-summary-title">📋 镜头总表</div>'
@@ -1578,16 +1583,20 @@ function renderShootStage() {
       + '<span class="vn-clear" onclick="removeShotVideo(' + idx + ')" title="移除视频">✕</span></div>';
   }
 
+  // 未完成镜头筛选（镜头拆解：室内/室外未全部完成即为未完成）
+  const undoneItems = showOnlyUndone ? items.filter(function (it) { return !(it.shot.indoorDone && it.shot.outdoorDone); }) : items;
+
   let html = '';
   if (groupByScene) {
     const groups = [];
     const map = {};
-    items.forEach(function (it) {
+    undoneItems.forEach(function (it) {
       const key = (it.shot.scene && it.shot.scene.trim()) ? it.shot.scene.trim() : '未分组';
       if (typeof map[key] === 'undefined') { map[key] = groups.length; groups.push({ key: key, items: [] }); }
       groups[map[key]].items.push(it);
     });
     groups.forEach(function (g) {
+      if (g.items.length === 0) return;
       const total = g.items.reduce(function (a, it) { return a + (parseInt(it.shot.duration) || 0); }, 0);
       const collapsed = collapsedGroups.has(g.key);
       html += '<div class="shot-group">'
@@ -1600,9 +1609,9 @@ function renderShootStage() {
         + '</div></div>';
     });
   } else {
-    html = items.map(function (it) { return cardHtml(it.shot, it.idx); }).join('');
+    html = undoneItems.map(function (it) { return cardHtml(it.shot, it.idx); }).join('');
   }
-  container.innerHTML = html;
+  container.innerHTML = html || emptyStateHTML('✅', '暂无未完成镜头', showOnlyUndone ? '当前所有镜头拆解卡片均已标记完成' : '请先在脚本阶段添加镜头');
   container.querySelectorAll('.field-textarea-auto').forEach(function(el) { autoResize(el); });
 
   // 镜头总表渲染到独立容器（位于专用搜索框之下），避免重渲染时输入框失焦
@@ -1610,7 +1619,7 @@ function renderShootStage() {
   const sumWrap = document.getElementById('summary-search-wrap');
   if (sumContainer) {
     if (showSum && shots.length > 0 && items.length > 0) {
-      sumContainer.innerHTML = buildShotSummary(items, summaryPct);
+      sumContainer.innerHTML = buildShotSummary(items, summaryPct, showOnlyUndone);
       sumContainer.style.display = '';
       if (sumWrap) sumWrap.style.display = 'flex';
     } else {
@@ -1663,7 +1672,7 @@ function renderShotSummary() {
   const sumWrap = document.getElementById('summary-search-wrap');
   if (!sumContainer) return;
   if (shots.length > 0 && items.length > 0) {
-    sumContainer.innerHTML = buildShotSummary(items, computeSummaryPct(items).pct);
+    sumContainer.innerHTML = buildShotSummary(items, computeSummaryPct(items).pct, showOnlyUndone);
     sumContainer.style.display = '';
     if (sumWrap) sumWrap.style.display = 'flex';
   } else {
@@ -1676,6 +1685,12 @@ function renderShotSummary() {
 // 拍摄标签页视图过滤：只显示镜头拆解 / 只显示镜头总表
 // 两个都不勾 → 都显示；单独勾选其一 → 隐藏另一种，只显示当前勾选内容
 function onToggleView(which, checked) {
+  renderShootStage();
+}
+
+// 未完成镜头筛选：与「只显示镜头拆解/总表」组合使用
+function onToggleUndone(checked) {
+  showOnlyUndone = checked;
   renderShootStage();
 }
 
@@ -1748,6 +1763,7 @@ let batchMode = false;
 let groupByScene = false;
 let shootSearchKeyword = '';   // 拍摄阶段搜索关键词（按镜头描述过滤卡片）
 let summarySearchKeyword = ''; // 镜头总表专用搜索关键词（按镜头名称片段过滤总表）
+let showOnlyUndone = false;    // 是否只显示未完成镜头
 const selectedShots = new Set();
 const collapsedGroups = new Set();
 let dragSrcIdx = null;
