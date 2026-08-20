@@ -844,7 +844,7 @@ let pendingAction = null;      // 待执行的操作（用于替换确认后执�
 let pendingWriteVideo = null;  // 镜头编写面板待添加的参考视频文件
 
 // ===== 会员 / 使用额度 =====
-let isMember = true;             // 公网版永久解锁会员
+let isMember = true;            // 公网版永久解锁会员
 let useCountShotWrite = 0;       // 「镜头编写」使用次数（非会员上限 FREE_LIMIT）
 let useCountExcelImport = 0;     // 「Excel 导入」使用次数（非会员上限 FREE_LIMIT）
 const FREE_LIMIT = 3;            // 非会员免费额度
@@ -1416,12 +1416,14 @@ function buildShotSummary(items, pct, undoneOnly) {
   let rows = '';
   let no = 1;
   // 按总次数加权统计：已勾选镜头的出现次数之和
+  // 统计（类数/总次数/已完成/百分比/进度条）始终按全部镜头计算；
+  // 勾选「未完成镜头」仅过滤表格显示的行，进度保持原样不被改变
   let total = 0, doneWeighted = 0;
   map.forEach(function (count, shot) {
     const done = !!summaryDone[shot];
-    if (undoneOnly && done) return; // 只显示未完成镜头时跳过已完成的镜头
     total += count;
     if (done) doneWeighted += count;
+    if (undoneOnly && done) return; // 只显示未完成镜头时跳过已完成镜头的行（统计照常计入）
     rows += '<tr' + (done ? ' class="row-done"' : '') + '>'
       + '<td class="col-no">' + no + '</td>'
       + '<td class="col-shot">' + escapeHtml(shot) + '</td>'
@@ -1430,8 +1432,8 @@ function buildShotSummary(items, pct, undoneOnly) {
       + '</tr>';
     no++;
   });
-  const classes = undoneOnly ? no - 1 : map.size;
-  // 百分比按当前显示的（已按关键词过滤的）镜头片段加权计算，与表格行一致
+  const classes = map.size;
+  // 百分比按镜头片段加权计算（仅受关键词过滤影响；勾选「未完成镜头」不改变百分比与进度条）
   const pctVal = total > 0 ? Math.round((doneWeighted / total) * 100) : 0;
   // 空状态文案：区分「无镜头卡片 / 全部缺口播」与「关键词无命中」三种情况
   const hasVoiceItems = items.some(function (it) { return shotHasDesc(it.shot); });
