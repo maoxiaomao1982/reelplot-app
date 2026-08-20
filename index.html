@@ -693,8 +693,8 @@ function preloadLibraries() {
         <label class="view-filter-item"><input type="checkbox" id="view-summary-chk" onchange="onToggleView('summary', this.checked)"> 只显示镜头总表</label>
       </div>
     </div>
-    <div class="section-title">🎥 拍摄阶段 — 镜头拆解</div>
-    <div class="progress-container">
+    <div class="section-title" id="shoot-breakdown-title">🎥 拍摄阶段 — 镜头拆解</div>
+    <div class="progress-container" id="shoot-breakdown-progress">
       <div class="progress-header">
         <span class="progress-title">拍摄进度 <span class="progress-meta" id="shoot-progress-meta">0 / 0 已完成</span></span>
         <span class="progress-percent" id="shoot-progress-text">0%</span>
@@ -1482,6 +1482,10 @@ function renderShootStage() {
   const showSum = sOnly || (!bOnly && !sOnly);
   const breakdownSearch = document.getElementById('shoot-breakdown-search');
   if (breakdownSearch) breakdownSearch.style.display = showBreak ? 'flex' : 'none';
+  const breakdownTitle = document.getElementById('shoot-breakdown-title');
+  if (breakdownTitle) breakdownTitle.style.display = showBreak ? '' : 'none';
+  const breakdownProgress = document.getElementById('shoot-breakdown-progress');
+  if (breakdownProgress) breakdownProgress.style.display = showBreak ? '' : 'none';
 
   if (shots.length === 0) {
     container.innerHTML = emptyStateHTML('🎥', '暂无镜头', '请先在脚本阶段通过 Excel 表格 或 镜头编写 添加镜头');
