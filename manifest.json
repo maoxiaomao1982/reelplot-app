@@ -1,0 +1,53 @@
+{
+  "name": "视频制作流程管理",
+  "short_name": "视频制作",
+  "description": "视频制作全流程管理工具：脚本解析→拍摄跟踪→剪辑任务→完成汇总",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f0f2f5",
+  "theme_color": "#7c3aed",
+  "lang": "zh-CN",
+  "scope": "./",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "脚本阶段",
+      "short_name": "脚本",
+      "url": "./index.html#stage-0",
+      "description": "上传脚本、解析镜头"
+    },
+    {
+      "name": "拍摄阶段",
+      "short_name": "拍摄",
+      "url": "./index.html#stage-1",
+      "description": "跟踪拍摄进度"
+    }
+  ]
+}

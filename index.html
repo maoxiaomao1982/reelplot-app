@@ -1,0 +1,2304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Reelplot</title>
+
+<!-- PWA Meta Tags -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#7c3aed">
+<meta name="description" content="视频制作全流程管理工具：脚本解析→拍摄跟踪→剪辑任务→完成汇总">
+
+<!-- iOS PWA Support -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Reelplot">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+<!-- Favicon -->
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
+
+<script>
+// ===== Robust multi-CDN script loader with per-CDN timeout =====
+function createCDNLoader(cdns, libName) {
+  var idx = 0;
+  var done = false;
+  function loadNext() {
+    if (done) return;
+    if (idx >= cdns.length) {
+      console.error('All ' + libName + ' CDNs failed');
+      done = true; // stop trying; allow retry via retryCDNs()
+      return;
+    }
+    var url = cdns[idx++];
+    var s = document.createElement('script');
+    var settled = false;
+    s.src = url;
+    s.onload = function() {
+      if (settled || done) return;
+      settled = true;
+      done = true;
+      console.log(libName + ' loaded from', url);
+    };
+    s.onerror = function() {
+      if (settled || done) return;
+      settled = true;
+      console.warn(libName + ' CDN failed:', url);
+      if (s.parentNode) s.parentNode.removeChild(s);
+      loadNext();
+    };
+    document.head.appendChild(s);
+    // Per-CDN timeout: 8s, then try next
+    setTimeout(function() {
+      if (settled || done) return;
+      settled = true;
+      console.warn(libName + ' CDN timeout (8s):', url);
+      if (s.parentNode) s.parentNode.removeChild(s);
+      loadNext();
+    }, 8000);
+  }
+  loadNext();
+  // Return a retry function
+  return function retry() {
+    if (done) { idx = 0; done = false; loadNext(); }
+  };
+}
+
+// SheetJS (XLSX) — Chinese CDNs first, then international fallbacks
+var retryXLSX = createCDNLoader([
+  'https://cdn.bootcdn.net/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+  'https://cdn.staticfile.org/xlsx/0.18.5/xlsx.full.min.js',
+  'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+  'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+], 'XLSX');
+
+
+// Wait for a global library to load (poll every 200ms, timeout 60s)
+function waitForLibrary(globalName, timeout) {
+  timeout = timeout || 60000;
+  return new Promise(function(resolve, reject) {
+    var start = Date.now();
+    function check() {
+      if (typeof window[globalName] !== 'undefined') { resolve(); return; }
+      if (Date.now() - start > timeout) { reject(new Error(globalName + ' load timeout')); return; }
+      setTimeout(check, 200);
+    }
+    check();
+  });
+}
+
+// ===== Library Preload Status =====
+let libStatus = { xlsx: 'loading' };
+
+function updateLibStatusBadge() {
+  var badge = document.getElementById('lib-status-badge');
+  if (!badge) return;
+  var loading = [], errors = [];
+  if (libStatus.xlsx === 'loading') loading.push('Excel');
+  else if (libStatus.xlsx === 'error') errors.push('Excel');
+  if (loading.length === 0 && errors.length === 0) {
+    badge.innerHTML = '<svg viewBox="0 0 16 16" width="13" height="13" style="vertical-align:-2px" aria-hidden="true"><path d="M3 8.5l3.4 3.4L13.2 4.6" fill="none" stroke="#b8a59d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg> 解析库就绪';
+    badge.className = 'lib-badge ready';
+  } else if (errors.length > 0 && loading.length === 0) {
+    badge.innerHTML = '⚠️ ' + errors.join('、') + '加载失败 <span style="cursor:pointer;text-decoration:underline" onclick="retryPreload()">重试</span>';
+    badge.className = 'lib-badge error';
+  } else {
+    badge.innerHTML = '⏳ 加载' + loading.join('、') + '...';
+    badge.className = 'lib-badge loading';
+  }
+}
+
+function retryPreload() {
+  libStatus = { xlsx: 'loading' };
+  updateLibStatusBadge();
+  retryXLSX();
+  preloadLibraries();
+}
+
+// Preload XLSX library at startup
+function preloadLibraries() {
+  // XLSX
+  if (libStatus.xlsx !== 'ready') {
+    waitForLibrary('XLSX', 60000).then(function() {
+      libStatus.xlsx = 'ready';
+      updateLibStatusBadge();
+      console.log('[Preload] XLSX ready');
+    }).catch(function() {
+      libStatus.xlsx = 'error';
+      updateLibStatusBadge();
+      console.error('[Preload] XLSX failed');
+    });
+  }
+}
+</script>
+<style>
+  :root {
+    --bg: #eee8db;
+    --surface: #f7f4ee;
+    --bg-secondary: #f2ede1;
+    --primary: #6b4f38;
+    --primary-light: #8f7357;
+    --primary-bg: #e9e1d0;
+    --success: #7d9a6b;
+    --warning: #c98a2e;
+    --danger: #b0563f;
+    --text: #4a3b2b;
+    --text-light: #8b7a66;
+    --text-secondary: #8b7a66;
+    --border: #d8cdb6;
+    --radius: 12px;
+    --shadow: 0 1px 3px rgba(107,79,56,0.10), 0 1px 2px rgba(107,79,56,0.06);
+    --shadow-lg: 0 10px 25px rgba(107,79,56,0.10), 0 4px 10px rgba(107,79,56,0.06);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.6;
+  }
+
+  /* ===== Header ===== */
+  .header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    position: sticky; top: 0; z-index: 100; box-shadow: var(--shadow);
+  }
+  .header-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
+  .header h1 { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .header-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    padding: 8px 16px; border: none; border-radius: 8px; font-size: 14px; font-weight: 500;
+    cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn-outline { background: #f7f4ee; border: 1px solid var(--border); color: var(--primary); }
+  .btn-outline:hover { border-color: var(--primary); color: var(--primary); background: #eee7d6; }
+  .btn-primary { background: #f7f4ee; color: var(--primary); border: 1px solid var(--border); }
+  .btn-primary:hover { background: #eee7d6; border-color: var(--primary); }
+  .btn-danger { background: #f2ddd6; color: var(--danger); }
+  .btn-danger:hover { background: #eccbc2; }
+  .btn-sm { padding: 5px 12px; font-size: 13px; }
+  .btn-success { background: #dcead6; color: #5c7a4f; }
+  .btn-success:hover { background: #cde0c4; }
+  .shot-actions { display: flex; gap: 10px; margin-top: 12px; }
+  .shot-actions .btn { flex: 0 0 auto; }
+  .btn-edit { background: #f7f4ee; color: var(--primary); }
+  .btn-edit:hover { background: #eee7d6; }
+  .btn-save { background: #dcead6; color: #5c7a4f; }
+  .btn-save:hover { background: #cde0c4; }
+  textarea[readonly], input[readonly] { background: var(--bg-secondary); color: var(--text-secondary); cursor: not-allowed; }
+  .lib-badge { font-size: 12px; padding: 4px 10px; border-radius: 20px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; transition: all 0.3s; }
+  .lib-badge.loading { background: #fef3c7; color: #92400e; }
+  .lib-badge.ready { background: #f7f4ee; color: #b8a59d; }
+  .lib-badge.error { background: #fee2e2; color: #991b1b; }
+
+  /* ===== Stepper ===== */
+  .stepper-container { background: var(--surface); padding: 24px; display: flex; justify-content: center; }
+  .stepper { display: flex; align-items: center; max-width: 900px; width: 100%; }
+  .step { display: flex; flex-direction: column; align-items: center; cursor: pointer; flex: 1; transition: all 0.3s; }
+  .step-circle {
+    width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 700; border: 3px solid var(--border); background: var(--surface);
+    color: var(--text-light); transition: all 0.3s; z-index: 2;
+  }
+  .step.active .step-circle { border-color: var(--primary); background: var(--primary); color: #fff; transform: scale(1.1); box-shadow: 0 0 0 6px var(--primary-bg); }
+  .step.completed .step-circle { border-color: var(--success); background: var(--success); color: #fff; }
+  .step-label { margin-top: 8px; font-size: 14px; font-weight: 600; color: var(--text-light); transition: all 0.3s; }
+  .step.active .step-label { color: var(--primary); }
+  .step.completed .step-label { color: var(--success); }
+  .step-connector { flex: 1; height: 3px; background: var(--border); margin: 0 -8px; margin-bottom: 28px; border-radius: 2px; transition: background 0.3s; position: relative; top: -24px; }
+  .step-connector.completed { background: var(--success); }
+
+  /* ===== Main ===== */
+  .main-content { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .stage-panel { display: none; animation: fadeIn 0.3s; }
+  .stage-panel.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  .section-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .section-title .badge { font-size: 13px; font-weight: 500; padding: 2px 10px; border-radius: 20px; background: var(--primary-bg); color: var(--primary); }
+  .section-title .badge.success { background: #f7f4ee; color: #6b4f38; }
+
+  /* ===== Input Mode Tabs ===== */
+  .input-mode-tabs {
+    display: flex; gap: 0; margin-bottom: 20px; border-bottom: 2px solid var(--border);
+  }
+  .input-tab {
+    padding: 12px 24px; font-size: 15px; font-weight: 600; cursor: pointer; border: none;
+    background: transparent; color: var(--text-light); border-bottom: 3px solid transparent;
+    transition: all 0.2s; margin-bottom: -2px; display: flex; align-items: center; gap: 8px;
+  }
+  .input-tab:hover { color: var(--primary); }
+  .input-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+  .input-panel { display: none; }
+  .input-panel.active { display: block; animation: fadeIn 0.3s; }
+
+  /* ===== Text Input Area ===== */
+  .text-input-card {
+    background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 20px; margin-bottom: 24px;
+  }
+  .text-input-card textarea {
+    width: 100%; min-height: 220px; padding: 16px; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 14px; font-family: inherit; resize: vertical;
+    line-height: 1.8; color: var(--text); background: #f2ede1; transition: all 0.2s;
+  }
+  .text-input-card textarea:focus {
+    outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-bg); background: var(--surface);
+  }
+  .text-input-card textarea::placeholder { color: #aaa; }
+  .text-input-actions { display: flex; gap: 12px; margin-top: 12px; align-items: center; flex-wrap: wrap; }
+  .text-format-hint {
+    font-size: 12px; color: var(--text-light); margin-top: 8px; line-height: 1.6;
+  }
+  .text-format-hint code {
+    background: var(--primary-bg); color: var(--primary); padding: 1px 6px; border-radius: 4px;
+    font-size: 12px; font-family: "SF Mono", Consolas, monospace;
+  }
+
+  /* ===== 镜头编写 ===== */
+  .write-shot-card {
+    background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 20px; margin-bottom: 24px;
+  }
+  .write-field { margin-bottom: 16px; }
+  .write-field label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px; color: var(--text); }
+  .write-input {
+    width: 140px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 14px; color: var(--text); background: #f2ede1;
+  }
+  .write-input[readonly] { background: #ece5d6; color: var(--text-light); }
+  .write-textarea {
+    width: 100%; min-height: 90px; padding: 12px 14px; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 14px; font-family: inherit; resize: vertical;
+    line-height: 1.7; color: var(--text); background: #f2ede1; transition: all 0.2s;
+  }
+  .write-textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-bg); background: var(--surface); }
+  .write-textarea::placeholder { color: #aaa; }
+  .write-actions { display: flex; gap: 12px; margin-top: 4px; }
+
+  /* ===== 视频上传 ===== */
+  .write-video-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .btn-video-upload {
+    display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px;
+    border: 1px dashed var(--primary); background: var(--primary-bg); color: var(--primary);
+    font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+  }
+  .btn-video-upload:hover { background: #ede9fe; }
+  .write-video-name {
+    display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text);
+    background: #f1f5f9; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; max-width: 100%;
+  }
+  .write-video-name .vn-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+  .write-video-name .vn-clear { cursor: pointer; color: var(--danger); font-weight: 700; }
+  .shot-video-tag {
+    display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 13px;
+    background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 6px 10px; color: #1e40af;
+  }
+  .shot-video-tag a { color: #1d4ed8; text-decoration: none; font-weight: 600; }
+  .shot-video-tag a:hover { text-decoration: underline; }
+  .shot-video-tag .vn-clear { cursor: pointer; color: var(--danger); font-weight: 700; }
+
+  /* ===== Excel Upload Area ===== */
+  .excel-upload-card {
+    background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 20px; margin-bottom: 24px;
+  }
+  .excel-drop-zone {
+    border: 2px dashed var(--border); border-radius: var(--radius); padding: 40px 20px;
+    text-align: center; transition: all 0.2s; cursor: pointer;
+  }
+  .excel-drop-zone:hover { border-color: var(--primary); background: var(--primary-bg); }
+  .excel-drop-zone.dragover { border-color: var(--primary); background: var(--primary-bg); transform: scale(1.01); }
+  .excel-drop-zone .icon { font-size: 48px; margin-bottom: 12px; }
+  .excel-drop-zone .title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .excel-drop-zone .desc { font-size: 13px; color: var(--text-light); }
+  .excel-drop-zone .formats { margin-top: 8px; font-size: 12px; color: var(--text-light); }
+
+  .excel-loading { display: flex; align-items: center; gap: 12px; padding: 20px 16px; background: var(--primary-bg); border-radius: 8px; margin-bottom: 16px; font-size: 15px; font-weight: 600; color: var(--primary); }
+  .excel-loading .spinner { width: 20px; height: 20px; border: 3px solid #c7d2fe; border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .excel-file-info {
+    background: var(--primary-bg); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 12px; font-size: 14px;
+  }
+  .excel-file-info .file-icon { font-size: 28px; }
+  .excel-file-info .file-details { flex: 1; }
+  .excel-file-info .file-name { font-weight: 600; color: var(--primary); }
+  .excel-file-info .file-meta { font-size: 12px; color: var(--text-light); }
+
+  .column-mapping-info {
+    background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px;
+    font-size: 13px; color: #065f46;
+  }
+  .column-mapping-info strong { font-weight: 700; }
+  .column-mapping-info .mapping-list { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .column-mapping-info .mapping-tag {
+    background: #fff; border: 1px solid #bbf7d0; border-radius: 6px; padding: 2px 8px; font-size: 12px;
+  }
+
+  /* ===== Parsed Preview ===== */
+  .parsed-preview { margin-top: 20px; }
+  .parsed-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: #d1fae5; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .parsed-header-text { font-weight: 600; color: #065f46; font-size: 15px; }
+  .parsed-list { display: flex; flex-direction: column; gap: 10px; }
+  .parsed-item {
+    background: var(--surface); border-radius: 10px; box-shadow: var(--shadow); padding: 14px 16px;
+    display: flex; gap: 14px; align-items: flex-start; transition: box-shadow 0.2s;
+    border-left: 4px solid var(--primary);
+  }
+  .parsed-item:hover { box-shadow: var(--shadow-lg); }
+  .parsed-num {
+    background: var(--primary); color: #fff; width: 32px; height: 32px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0;
+  }
+  .parsed-content { flex: 1; font-size: 14px; color: var(--text); white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
+  .parsed-meta { font-size: 12px; color: var(--text-light); margin-top: 4px; }
+  .parsed-meta span { margin-right: 12px; }
+
+  /* ===== Shot Card ===== */
+  /* ===== 拍摄阶段：搜索栏 ===== */
+  .shoot-search-bar { display: flex; align-items: center; gap: 10px; margin: 4px 0 16px; flex-wrap: wrap; }
+  .shoot-search-input {
+    flex: 1; min-width: 200px; padding: 9px 14px; border: 1px solid var(--border); border-radius: 10px;
+    font-size: 14px; background: var(--surface); color: var(--text); outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .shoot-search-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-bg); }
+  .shoot-search-clear {
+    padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-secondary);
+    color: var(--text-light); font-size: 13px; cursor: pointer; white-space: nowrap;
+  }
+  .shoot-view-filter-wrap { margin: 2px 0 14px; }
+  .shoot-view-filter-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+  .shoot-view-filter { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .view-filter-item {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 14px; color: var(--text); cursor: pointer;
+    padding: 7px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); user-select: none;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .view-filter-item:active { background: var(--bg-secondary); }
+  .view-filter-item input { width: 17px; height: 17px; accent-color: var(--primary); cursor: pointer; }
+  .shoot-search-clear:hover { background: #ece5d6; color: var(--text); }
+  .shoot-search-count { font-size: 13px; color: var(--text-light); white-space: nowrap; }
+  .summary-search-bar { margin: 18px 0 12px; }
+
+  .shot-card {
+    background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+    overflow: hidden; margin-bottom: 16px; transition: box-shadow 0.2s; border: 2px solid transparent;
+  }
+  .shot-card:hover { box-shadow: var(--shadow-lg); }
+  .shot-card.completed { border-color: var(--success); background: #f0fdf4; }
+  .shot-card-header { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); gap: 12px; }
+  .shot-number {
+    background: var(--primary); color: #fff; width: 36px; height: 36px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; flex-shrink: 0;
+  }
+  .shot-card.completed .shot-number { background: var(--success); }
+  .shot-card-title { font-weight: 600; font-size: 15px; flex: 1; }
+
+  /* ===== Checkbox ===== */
+  .shoot-checkbox-wrapper {
+    display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+    padding: 6px 14px; border-radius: 8px; border: 2px solid var(--border); transition: all 0.2s;
+    flex-shrink: 0; font-weight: 600; font-size: 14px; background: var(--surface);
+  }
+  .shoot-checkbox-wrapper:hover { border-color: var(--success); }
+  .shoot-checkbox-wrapper.checked { border-color: var(--success); background: #d1fae5; color: #065f46; }
+  .shoot-checkbox {
+    width: 22px; height: 22px; border: 2px solid var(--border); border-radius: 6px;
+    display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; background: var(--surface);
+  }
+  .shoot-checkbox-wrapper.checked .shoot-checkbox { background: var(--success); border-color: var(--success); color: #fff; }
+  .shoot-checkbox::after {
+    content: ''; width: 6px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0;
+    transform: rotate(45deg) scale(0); transition: transform 0.2s;
+  }
+  .shoot-checkbox-wrapper.checked .shoot-checkbox::after { transform: rotate(45deg) scale(1); }
+
+  .shoot-flags { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
+  .shoot-flags .finished-flag { border-color: var(--success); }
+  .shoot-flags .finished-flag span { color: var(--success); font-weight: 600; }
+  .shoot-flags .finished-flag.checked { background: var(--success); }
+  .shoot-flags .finished-flag.checked span { color: #fff; }
+
+  .edit-checkbox-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .edit-checkbox-wrapper {
+    display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+    padding: 5px 12px; border-radius: 8px; border: 2px solid var(--border); transition: all 0.2s;
+    flex-shrink: 0; font-weight: 600; font-size: 13px; background: var(--surface);
+  }
+  .edit-checkbox-wrapper:hover { border-color: var(--primary); }
+  .edit-checkbox-wrapper.checked { border-color: var(--success); background: #d1fae5; color: #065f46; }
+  .edit-checkbox {
+    width: 20px; height: 20px; border: 2px solid var(--border); border-radius: 5px;
+    display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; background: var(--surface);
+  }
+  .edit-checkbox-wrapper.checked .edit-checkbox { background: var(--success); border-color: var(--success); color: #fff; }
+  .edit-checkbox::after {
+    content: ''; width: 5px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0;
+    transform: rotate(45deg) scale(0); transition: transform 0.2s;
+  }
+  .edit-checkbox-wrapper.checked .edit-checkbox::after { transform: rotate(45deg) scale(1); }
+
+  .edit-task-card {
+    display: flex; align-items: center; gap: 16px; padding: 20px 24px;
+    border-radius: 12px; border: 2px solid var(--border); background: var(--surface);
+    cursor: pointer; transition: all 0.2s;
+  }
+  .edit-task-card:hover { border-color: var(--primary); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .edit-task-card.done { border-color: var(--success); background: #d1fae5; }
+
+  .shot-card-body { display: flex; gap: 16px; padding: 16px; }
+  .shot-image-placeholder {
+    flex-shrink: 0; width: 120px; height: 80px; border-radius: 8px; background: var(--primary-bg);
+    display: flex; align-items: center; justify-content: center; font-size: 32px;
+  }
+  .shot-fields { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .field-group { display: flex; flex-direction: column; gap: 4px; }
+  .field-group.full { grid-column: 1 / -1; }
+  .field-label { font-size: 12px; font-weight: 600; color: var(--text-light); }
+  .field-input, .field-select, .field-textarea {
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px;
+    font-family: inherit; background: var(--surface); color: var(--text); transition: border-color 0.2s; width: 100%;
+  }
+  .field-input:focus, .field-select:focus, .field-textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-bg); }
+  .field-textarea { resize: vertical; min-height: 60px; }
+
+  /* ===== 镜头管理：工具栏 / 批量 / 分组 / 拖拽 ===== */
+  .shoot-toolbar { display: flex; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
+  .shoot-toolbar .btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .batch-bar { display: flex; gap: 14px; align-items: center; padding: 10px 14px; background: var(--primary-bg); border: 1px solid var(--primary); border-radius: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .batch-bar .batch-count { font-weight: 600; color: var(--primary); }
+  .batch-select-all { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; font-size: 14px; }
+  .batch-check { width: 18px; height: 18px; cursor: pointer; }
+  .shot-card.dragging { opacity: 0.4; }
+  .shot-card[draggable="true"] { cursor: grab; }
+  .shot-card[draggable="true"]:active { cursor: grabbing; }
+  .shot-group { margin-bottom: 10px; }
+  .shot-group-header { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-weight: 700; position: sticky; top: 0; z-index: 2; }
+  .shot-group-header .group-meta { color: var(--text-light); font-weight: 400; font-size: 13px; }
+  .shot-group-header .group-toggle { margin-left: auto; color: var(--text-light); }
+  .shot-group-body { margin-top: 10px; }
+  .shot-group-body .shot-card:first-child { margin-top: 0; }
+  .btn-duplicate { background: var(--surface); border-color: var(--border); color: var(--text); }
+  .btn-duplicate:hover { border-color: var(--primary); color: var(--primary); }
+  .field-textarea-auto { resize: none; overflow: hidden; min-height: 38px; line-height: 1.5; padding: 8px 12px; }
+
+  /* ===== 镜头总表（按描述拆分 / 去重计数） ===== */
+  .shot-summary { margin-top: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .shot-summary-header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; font-weight: 700; font-size: 15px; border-bottom: 1px solid var(--border); background: var(--primary-bg); }
+  .shot-summary-header .summary-sub { font-size: 12px; font-weight: 400; color: var(--text-light); }
+  .shot-summary-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .shot-summary-table th, .shot-summary-table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  .shot-summary-table th { background: var(--bg); color: var(--text-light); font-weight: 600; font-size: 13px; }
+  .shot-summary-table tr:last-child td { border-bottom: none; }
+  .shot-summary-table .col-no { width: 56px; color: var(--text-light); text-align: center; }
+  .shot-summary-table .col-count { width: 72px; text-align: center; font-weight: 700; color: var(--primary); }
+  .shot-summary-table .col-shot { font-weight: 500; }
+  .shot-summary-table .col-done { width: 64px; text-align: center; }
+  .shot-summary-table .summary-done-chk { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; }
+  .shot-summary-table tr.row-done td { color: var(--text-light); opacity: 0.5; }
+  .shot-summary-table tr.row-done .col-shot { text-decoration: line-through; }
+  .shot-summary-table tr.row-done .summary-done-chk { opacity: 1; }
+  .shot-summary-empty { padding: 18px 16px; color: var(--text-light); font-size: 13px; }
+  .shot-summary-progress { height: 8px; background: var(--border); border-radius: 6px; overflow: hidden; margin: 0 16px 4px; }
+  .shot-summary-progress > i { display: block; height: 100%; background: linear-gradient(90deg, var(--primary), #4f9bff); width: 0; transition: width .25s ease; }
+  .shot-summary-pct { margin-left: auto; font-size: 13px; font-weight: 700; color: var(--primary); }
+
+  /* ===== Status & Progress ===== */
+  .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .status-pending { background: #f2ede1; color: #8b7a66; }
+  .status-progress { background: #fef3c7; color: #92400e; }
+  .status-done { background: #d1fae5; color: #065f46; }
+  .progress-container { background: var(--surface); border-radius: var(--radius); padding: 20px; margin-bottom: 24px; box-shadow: var(--shadow); }
+  .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .progress-title { font-weight: 600; font-size: 15px; }
+  .progress-meta { font-size: 14px; color: var(--text-light); margin-left: 8px; }
+  .progress-percent { font-weight: 700; font-size: 18px; color: var(--primary); }
+  .progress-percent.done { color: var(--success); }
+  .progress-bar { height: 10px; background: #f3f4f6; border-radius: 5px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 5px; transition: width 0.5s ease; background: linear-gradient(90deg, var(--primary), var(--primary-light)); }
+  .progress-fill.done { background: linear-gradient(90deg, var(--success), #34d399); }
+
+  /* ===== Shot List (Edit) ===== */
+  .shot-list-item {
+    background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px;
+    margin-bottom: 12px; display: flex; align-items: center; gap: 16px;
+  }
+  .shot-list-info { flex: 1; min-width: 0; }
+  .shot-list-info .name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+  .shot-list-info .desc { font-size: 13px; color: var(--text-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .shot-list-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+  .status-select { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); font-size: 13px; font-weight: 600; cursor: pointer; background: var(--surface); }
+
+  /* ===== Summary ===== */
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .summary-card { background: var(--surface); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); text-align: center; }
+  .summary-card .num { font-size: 36px; font-weight: 800; color: var(--primary); }
+  .summary-card .label { font-size: 14px; color: var(--text-light); margin-top: 4px; }
+  .summary-card.green .num { color: var(--success); }
+  .summary-card.orange .num { color: var(--warning); }
+
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--text-light); }
+  .empty-state .icon { font-size: 56px; margin-bottom: 16px; opacity: 0.4; }
+  .empty-state .title { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: var(--text); }
+  .empty-state .desc { font-size: 14px; }
+
+  /* ===== Toast ===== */
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--text); color: #fff; padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; box-shadow: var(--shadow-lg); z-index: 9999; transform: translateY(100px); opacity: 0; transition: all 0.3s; }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { background: var(--success); }
+  .toast.error { background: var(--danger); }
+
+  /* ===== Modal ===== */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 200; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--surface); border-radius: var(--radius); padding: 24px; max-width: 500px; width: 90%; box-shadow: var(--shadow-lg); }
+  .member-btn { white-space: nowrap; }
+  .member-btn.member-off { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+  .member-btn.member-off:hover { background: #e2e8f0; }
+  .member-btn.member-on { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; border: 1px solid #d97706; }
+  .member-status { font-weight: 600; padding: 2px 10px; border-radius: 999px; font-size: 13px; }
+  .member-status.on { background: #fef3c7; color: #b45309; }
+  .member-status.off { background: #f1f5f9; color: #64748b; }
+  .modal h3 { margin-bottom: 16px; }
+  .modal-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; }
+
+  @media (max-width: 768px) {
+    .header { flex-direction: column; align-items: stretch; gap: 8px; padding: max(20px, env(safe-area-inset-top)) 16px 12px; }
+    .header-title-row { flex-direction: row; justify-content: space-between; align-items: center; gap: 8px; }
+    .header-title-row h1 { font-size: 16px; flex-shrink: 0; }
+    .header-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; }
+    .header-actions .btn { width: 100%; justify-content: center; padding: 6px 8px; font-size: 12px; white-space: nowrap; }
+    #btn-download-script { grid-column: 1; grid-row: 1; }
+    #btn-export-data { grid-column: 2; grid-row: 1; }
+    .header-actions .member-btn { grid-column: 1; grid-row: 2; }
+    #btn-reset-all { grid-column: 2; grid-row: 2; }
+    .stepper-container { padding: 16px 8px; }
+    .step-label { font-size: 12px; }
+    .shot-card-body { flex-direction: column; }
+    .shot-fields { grid-template-columns: 1fr; }
+    .shot-list-item { flex-direction: column; align-items: flex-start; }
+    .shot-list-actions { width: 100%; flex-wrap: wrap; }
+    .shot-card-header { flex-wrap: wrap; }
+    .input-tab { padding: 10px 16px; font-size: 13px; }
+  }
+
+  /* iPad：顶部再多预留 30px 空白（JS 检测后给 body 加 .ipad-extra-top） */
+  body.ipad-extra-top .header {
+    padding-top: calc(max(20px, env(safe-area-inset-top, 0px)) + 30px);
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-title-row">
+    <h1>🎬 Reelplot</h1>
+    <span id="lib-status-badge" class="lib-badge loading">⏳ 加载解析库...</span>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-primary btn-sm" id="pwa-install-btn" style="display:none" onclick="pwaInstall()">📲 安装到桌面</button>
+    <button class="btn btn-sm member-btn member-off" id="member-btn" onclick="openMemberCenter()">👤 非会员</button>
+    <button class="btn btn-outline btn-sm" id="btn-download-script" onclick="downloadScriptTemplate()"><svg viewBox="0 0 16 16" width="15" height="15" style="vertical-align:-2px" aria-hidden="true"><path d="M8 2v7.5" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.8 6.8L8 10l3.2-3.2" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 11v1.5a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5V11" fill="none" stroke="#b8a59d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> 下载脚本空表</button>
+    <button class="btn btn-outline btn-sm" id="btn-export-data" onclick="exportData()"><svg viewBox="0 0 16 16" width="15" height="15" style="vertical-align:-2px" aria-hidden="true"><path d="M8 9.5V2" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.8 5.2L8 2l3.2 3.2" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 11v1.5a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5V11" fill="none" stroke="#b8a59d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> 导出数据</button>
+    <button class="btn btn-danger btn-sm" id="btn-reset-all" onclick="confirmReset()">🗑️ 重置全部</button>
+  </div>
+</div>
+
+<div class="stepper-container"><div class="stepper" id="stepper"></div></div>
+
+<div class="main-content">
+
+  <!-- Stage 1: 脚本 -->
+  <div class="stage-panel" id="stage-0">
+    <div class="section-title">
+      <svg viewBox="0 0 16 16" width="16" height="16" style="vertical-align:-3px" aria-hidden="true"><path d="M4 1.8h5.5l3 3v9.4H4z" fill="none" stroke="#b8a59d" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.5 1.8v3h3" fill="none" stroke="#b8a59d" stroke-width="1.6" stroke-linejoin="round"/><path d="M6.2 8h4.6M6.2 11h3.4" fill="none" stroke="#b8a59d" stroke-width="1.6" stroke-linecap="round"/></svg> 脚本阶段 — 提取镜头
+      <span class="badge" id="script-source-badge">未输入</span>
+      <span class="badge success" id="script-shot-badge">0 个镜头</span>
+    </div>
+
+    <!-- Input Mode Tabs -->
+    <div class="input-mode-tabs">
+      <button class="input-tab active" id="tab-write" onclick="switchInputMode('write')"><svg viewBox="0 0 16 16" width="15" height="15" style="vertical-align:-2px" aria-hidden="true"><rect x="1.5" y="7" width="13" height="7.5" rx="1.5" fill="none" stroke="#b8a59d" stroke-width="1.6" stroke-linejoin="round"/><path d="M1.8 7.2l2-4.7 10 3.9" fill="none" stroke="#b8a59d" stroke-width="1.6" stroke-linejoin="round"/><path d="M5.6 2.9l.9 2.5M8.8 4.1l.9 2.5" stroke="#b8a59d" stroke-width="1.4" stroke-linecap="round"/></svg> 镜头编写</button>
+      <button class="input-tab" id="tab-excel" onclick="switchInputMode('excel')"><svg viewBox="0 0 16 16" width="15" height="15" style="vertical-align:-2px" aria-hidden="true"><rect x="1.5" y="2" width="13" height="12" rx="1.5" fill="none" stroke="#b8a59d" stroke-width="1.6"/><path d="M1.5 6.5h13M1.5 10.5h13M6 2v12M10.5 2v12" fill="none" stroke="#b8a59d" stroke-width="1.2"/></svg> Excel 表格</button>
+    </div>
+
+    <!-- 镜头编写 Panel -->
+    <div class="input-panel active" id="panel-write">
+      <div class="write-shot-card">
+        <div class="write-field">
+          <label>镜头编号</label>
+          <input type="text" id="write-order" class="write-input" value="1" readonly>
+        </div>
+        <div class="write-field">
+          <label>镜头描述</label>
+          <textarea id="write-desc" class="write-textarea" placeholder="描述这个镜头的画面内容...（也可上传参考视频，自动以文件名作为描述）"></textarea>
+          <div class="write-video-row">
+            <label class="btn-video-upload" for="write-video-input">📎 上传视频</label>
+            <input type="file" id="write-video-input" accept="video/*" style="display:none;" onchange="handleWriteVideoSelect(this)">
+            <span class="write-video-name" id="write-video-name" style="display:none;">
+              <span class="vn-text" id="write-video-text"></span>
+              <span class="vn-clear" onclick="clearWriteVideo()" title="移除视频">✕</span>
+            </span>
+          </div>
+        </div>
+        <div class="write-field">
+          <label>口播</label>
+          <textarea id="write-voice" class="write-textarea" placeholder="填写口播台词，时长将自动计算..." oninput="updateWriteDuration()"></textarea>
+        </div>
+        <div class="write-field">
+          <label>时长（秒）</label>
+          <input type="text" id="write-duration" class="write-input" value="0" readonly>
+        </div>
+        <div class="write-actions">
+          <button class="btn btn-primary" onclick="addWriteShotToShoot()">➕ 添加到拍摄</button>
+          <button class="btn btn-outline" onclick="resetWriteForm()">↺ 重置</button>
+        </div>
+        <div class="text-format-hint">提示：镜头编号从 1 自动递增；时长 = 口播字数 ÷ 19 × 3（取整）。点击「添加到拍摄」后编号 +1、镜头描述与口播自动清空。</div>
+      </div>
+    </div>
+
+    <!-- Excel Upload Panel -->
+    <div class="input-panel" id="panel-excel">
+      <div class="excel-upload-card">
+        <div class="excel-drop-zone" id="excel-drop-zone" onclick="document.getElementById('excel-file-input').click()">
+          <div class="icon"><svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="#b8a59d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M24 34V12M15 21l9-9 9 9"/><path d="M10 34v4a4 4 0 0 0 4 4h20a4 4 0 0 0 4-4v-4"/></svg></div>
+          <div class="title">点击或拖拽上传 Excel 表格</div>
+          <div class="desc">系统会自动识别表头、按序号列提取镜头</div>
+          <div class="formats">支持 .xlsx / .xls / .csv 格式</div>
+        </div>
+        <input type="file" id="excel-file-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleExcelUpload(event)">
+      </div>
+      <div id="excel-info-container"></div>
+    </div>
+
+    <div id="preview-container"></div>
+  </div>
+
+  <!-- Stage 2: 拍摄 -->
+  <div class="stage-panel" id="stage-1">
+    <div class="shoot-view-filter-wrap">
+      <div class="shoot-view-filter-title">镜头展示类型</div>
+      <div class="shoot-view-filter">
+        <label class="view-filter-item"><input type="checkbox" id="view-breakdown-chk" onchange="onToggleView('breakdown', this.checked)"> 只显示镜头拆解</label>
+        <label class="view-filter-item"><input type="checkbox" id="view-summary-chk" onchange="onToggleView('summary', this.checked)"> 只显示镜头总表</label>
+      </div>
+    </div>
+    <div class="section-title">🎥 拍摄阶段 — 镜头拆解</div>
+    <div class="progress-container">
+      <div class="progress-header">
+        <span class="progress-title">拍摄进度 <span class="progress-meta" id="shoot-progress-meta">0 / 0 已完成</span></span>
+        <span class="progress-percent" id="shoot-progress-text">0%</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="shoot-progress-fill" style="width:0%"></div></div>
+    </div>
+    <div class="shoot-search-bar" id="shoot-breakdown-search">
+      <input type="text" id="shoot-search-input" class="shoot-search-input" placeholder="🔍 搜索镜头描述关键词..." oninput="onShootSearch(this.value)">
+      <button type="button" class="shoot-search-clear" id="shoot-search-clear" style="display:none;" onclick="clearShootSearch()">✕ 清除</button>
+      <span class="shoot-search-count" id="shoot-search-count"></span>
+    </div>
+    <div id="shot-list-shoot"></div>
+    <div class="shoot-search-bar summary-search-bar" id="summary-search-wrap" style="display:none;">
+      <input type="text" id="summary-search-input" class="shoot-search-input" placeholder="🔍 搜索镜头总表名称..." oninput="onSummarySearch(this.value)">
+      <button type="button" class="shoot-search-clear" id="summary-search-clear" style="display:none;" onclick="clearSummarySearch()">✕ 清除</button>
+    </div>
+    <div id="shot-summary-container"></div>
+  </div>
+
+  <!-- Stage 3: 剪辑 -->
+  <div class="stage-panel" id="stage-2">
+    <div class="section-title"><svg viewBox="0 0 16 16" width="16" height="16" style="vertical-align:-3px" aria-hidden="true"><circle cx="4" cy="12" r="2" fill="none" stroke="#b8a59d" stroke-width="1.6"/><circle cx="12" cy="12" r="2" fill="none" stroke="#b8a59d" stroke-width="1.6"/><path d="M5.5 10.6L11.5 2M10.5 10.6L4.5 2" fill="none" stroke="#b8a59d" stroke-width="1.6" stroke-linecap="round"/></svg> 剪辑阶段</div>
+    <div class="progress-container">
+      <div class="progress-header">
+        <span class="progress-title">剪辑进度 <span class="progress-meta" id="edit-progress-meta">0 / 3 已完成</span></span>
+        <span class="progress-percent" id="edit-progress-text">0%</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="edit-progress-fill" style="width:0%"></div></div>
+    </div>
+    <div id="edit-tasks"></div>
+  </div>
+
+  <!-- Stage 4: 完成 -->
+  <div class="stage-panel" id="stage-3">
+    <div class="section-title"><svg viewBox="0 0 16 16" width="16" height="16" style="vertical-align:-3px" aria-hidden="true"><circle cx="8" cy="8" r="6.4" fill="none" stroke="#b8a59d" stroke-width="1.6"/><path d="M5 8.2l2.2 2.2L11.2 6" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> 完成阶段</div>
+    <div class="summary-grid" id="summary-grid"></div>
+    <div id="final-shot-list"></div>
+  </div>
+
+</div>
+
+<!-- Reset Modal -->
+<div class="modal-overlay" id="reset-modal">
+  <div class="modal">
+    <h3>⚠️ 确认重置</h3>
+    <p style="color:var(--text-light);">这将清除所有文字、镜头数据和进度信息，且不可恢复。确定要继续吗？</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn btn-danger" onclick="resetAll()">确认重置</button>
+    </div>
+  </div>
+</div>
+
+<!-- Replace Modal -->
+<div class="modal-overlay" id="replace-modal">
+  <div class="modal">
+    <h3>⚠️ 替换镜头数据</h3>
+    <p style="color:var(--text-light);">当前已有 <strong id="replace-count" style="color:var(--text);">0</strong> 个镜头数据，重新提取将替换所有现有镜头，已标记的拍摄/剪辑进度将丢失。确定要继续吗？</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeReplaceModal()">取消</button>
+      <button class="btn btn-primary" id="replace-confirm-btn">确认替换</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="delete-shot-modal">
+  <div class="modal">
+    <h3>🗑️ 确认删除</h3>
+    <p style="color:var(--text-light);">确定要删除镜头 <strong id="delete-shot-name" style="color:var(--text);"></strong> 吗？此操作不可恢复。</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeDeleteShotModal()">取消</button>
+      <button class="btn btn-danger" id="delete-shot-confirm-btn">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<!-- Member Center Modal -->
+<div class="modal-overlay" id="member-center-modal">
+  <div class="modal">
+    <h3>👤 会员中心</h3>
+    <p>当前状态：<span id="member-status" class="member-status off">非会员（免费额度）</span></p>
+    <p id="member-usage" style="color:var(--text-light);">免费额度：镜头编写 0/3 · Excel 导入 0/3</p>
+    <p style="color:var(--text-light);font-size:13px;line-height:1.6;">非会员：「镜头编写」与「Excel 导入」各可使用 3 次；开通会员后全部功能无限使用。</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeMemberCenter()">关闭</button>
+      <button class="btn btn-primary" id="member-toggle-btn" onclick="setMember(!isMember)">开通会员（无限使用）</button>
+    </div>
+  </div>
+</div>
+
+<!-- Member Limit Modal -->
+<div class="modal-overlay" id="limit-modal">
+  <div class="modal">
+    <h3>🔒 已达免费额度</h3>
+    <p style="color:var(--text-light);">您的 <span id="limit-feature"></span> 次免费额度已用完。开通会员后即可无限使用全部功能。</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeLimitModal()">稍后再说</button>
+      <button class="btn btn-primary" onclick="limitGoMember()">开通会员</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== iPad 顶部额外 30px 留白（触摸设备 + 屏幕短边 >= 700，排除 iPhone；Mac 无触摸不受影响） =====
+(function() {
+  var isTouch = navigator.maxTouchPoints > 1;
+  var shortSide = Math.min(window.screen.width, window.screen.height);
+  if (isTouch && shortSide >= 700) document.body.classList.add('ipad-extra-top');
+})();
+
+// ===== State =====
+const STAGE_ICON_COLOR = '#b8a59d'; // 浅咖啡色
+function stageIcon(kind, size) {
+  size = size || 14;
+  const s = 'fill="none" stroke="' + STAGE_ICON_COLOR + '" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"';
+  const base = '<svg viewBox="0 0 16 16" width="' + size + '" height="' + size + '" style="vertical-align:-2px" aria-hidden="true">';
+  if (kind === 'script') return base + '<path ' + s + ' d="M4 1.8h5.5l3 3v9.4H4z"/><path ' + s + ' d="M9.5 1.8v3h3"/><path ' + s + ' d="M6.2 8h4.6M6.2 11h3.4"/></svg>';
+  if (kind === 'shoot') return base + '<rect x="1.5" y="4.6" width="9" height="6.8" rx="1.5" ' + s + '/><path ' + s + ' d="M10.5 8l4-2.4v4.8L10.5 8z"/></svg>';
+  if (kind === 'edit') return base + '<circle cx="4" cy="12" r="2" ' + s + '/><circle cx="12" cy="12" r="2" ' + s + '/><path ' + s + ' d="M5.5 10.6L11.5 2M10.5 10.6L4.5 2"/></svg>';
+  if (kind === 'done') return base + '<circle cx="8" cy="8" r="6.4" ' + s + '/><path ' + s + ' stroke-width="1.8" d="M5 8.2l2.2 2.2L11.2 6"/></svg>';
+  if (kind === 'palette') return base + '<path ' + s + ' stroke-width="1.5" d="M8 1.8a6.2 6.2 0 0 0 0 12.4c1.1 0 1.6-.7 1.6-1.4 0-.9-.8-1.2-.8-2 0-.8.6-1.3 1.5-1.3h1.4A2.9 2.9 0 0 0 14.2 7c0-2.9-2.8-5.2-6.2-5.2z"/><circle cx="5" cy="6" r="1" fill="' + STAGE_ICON_COLOR + '"/><circle cx="8" cy="4.6" r="1" fill="' + STAGE_ICON_COLOR + '"/><circle cx="11" cy="6" r="1" fill="' + STAGE_ICON_COLOR + '"/></svg>';
+  if (kind === 'sound') return base + '<path ' + s + ' stroke-width="1.5" d="M2.5 6.2h2.2L8.5 3v10L4.7 9.8H2.5a.9.9 0 0 1-.9-.9V7.1a.9.9 0 0 1 .9-.9z"/><path ' + s + ' stroke-width="1.5" d="M10.8 5.5a4 4 0 0 1 0 5M12.6 3.8a6.5 6.5 0 0 1 0 8.4"/></svg>';
+  if (kind === 'download') return base + '<path ' + s + ' stroke-width="1.8" d="M8 2v7.5"/><path ' + s + ' stroke-width="1.8" d="M4.8 6.8L8 10l3.2-3.2"/><path ' + s + ' d="M2.5 11v1.5a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5V11"/></svg>';
+  if (kind === 'upload') return base + '<path ' + s + ' stroke-width="1.8" d="M8 9.5V2"/><path ' + s + ' stroke-width="1.8" d="M4.8 5.2L8 2l3.2 3.2"/><path ' + s + ' d="M2.5 11v1.5a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5V11"/></svg>';
+  return base + '<circle cx="8" cy="8" r="6.4" ' + s + '/><path ' + s + ' stroke-width="1.8" d="M5 8.2l2.2 2.2L11.2 6"/></svg>';
+}
+const STAGES = [
+  { name: '脚本', icon: stageIcon('script') },
+  { name: '拍摄', icon: stageIcon('shoot') },
+  { name: '剪辑', icon: stageIcon('edit') },
+  { name: '完成', icon: stageIcon('done') }
+];
+let currentStage = 0;
+let scriptText = '';           // 用户输入的原始文字
+let scriptSource = '';         // 数据来源: 'text' | 'excel'
+let excelData = null;          // Excel 解析后的数据 { fileName, rows, mapping, headers }
+let shots = [];                // 实际镜头数据 { id, order, name, shotType, cameraMove, duration, desc, note, indoorDone, outdoorDone }
+let globalEditTasks = { editCut: false, editColor: false, editSound: false }; // 剪辑阶段全局任务
+let summaryDone = {};          // 镜头总表「完成」勾选状态：{ 镜头内容: true }
+let autoJumpGuard = false;     // 防止「完成即跳转剪辑页」在同一 100% 状态下反复触发
+let pendingAction = null;      // 待执行的操作（用于替换确认后执行）
+let pendingWriteVideo = null;  // 镜头编写面板待添加的参考视频文件
+
+// ===== 会员 / 使用额度 =====
+let isMember = false;            // 会员状态（会员无限使用）
+let useCountShotWrite = 0;       // 「镜头编写」使用次数（非会员上限 FREE_LIMIT）
+let useCountExcelImport = 0;     // 「Excel 导入」使用次数（非会员上限 FREE_LIMIT）
+const FREE_LIMIT = 3;            // 非会员免费额度
+
+// ===== Persistence =====
+function saveData() {
+  localStorage.setItem('vp_script_text', scriptText);
+  localStorage.setItem('vp_script_source', scriptSource);
+  localStorage.setItem('vp_excel', JSON.stringify(excelData));
+  localStorage.setItem('vp_shots', JSON.stringify(shots));
+  localStorage.setItem('vp_edit_tasks', JSON.stringify(globalEditTasks));
+  localStorage.setItem('vp_summary_done', JSON.stringify(summaryDone));
+  localStorage.setItem('vp_stage', String(currentStage));
+  localStorage.setItem('vp_is_member', isMember ? '1' : '0');
+  localStorage.setItem('vp_use_shot', String(useCountShotWrite));
+  localStorage.setItem('vp_use_excel', String(useCountExcelImport));
+}
+function loadData() {
+  try {
+    const t = localStorage.getItem('vp_script_text');
+    if (t) scriptText = t;
+    const src = localStorage.getItem('vp_script_source');
+    if (src) scriptSource = src;
+    const ex = localStorage.getItem('vp_excel');
+    if (ex) excelData = JSON.parse(ex);
+    const s = localStorage.getItem('vp_shots');
+    if (s) {
+      shots = JSON.parse(s);
+      // Clean up old per-shot edit fields (no longer used)
+      shots.forEach(shot => {
+        delete shot.editStatus;
+        delete shot.editCut;
+        delete shot.editColor;
+        delete shot.editSound;
+        delete shot.editNote;
+        // Migrate old single shootDone flag → indoorDone (outdoorDone defaults false)
+        if (typeof shot.indoorDone === 'undefined') shot.indoorDone = !!(shot.shootDone);
+        if (typeof shot.outdoorDone === 'undefined') shot.outdoorDone = false;
+        if (typeof shot.scene === 'undefined') shot.scene = '';
+        delete shot.shootDone;
+      });
+    }
+    const et = localStorage.getItem('vp_edit_tasks');
+    if (et) {
+      const parsed = JSON.parse(et);
+      globalEditTasks = {
+        editCut: !!(parsed.editCut),
+        editColor: !!(parsed.editColor),
+        editSound: !!(parsed.editSound)
+      };
+    }
+    const st = localStorage.getItem('vp_stage');
+    if (st) currentStage = parseInt(st);
+    const sd = localStorage.getItem('vp_summary_done');
+    if (sd) { try { summaryDone = JSON.parse(sd) || {}; } catch(e) { summaryDone = {}; } }
+    // 会员 / 额度
+    isMember = localStorage.getItem('vp_is_member') === '1';
+    const us = localStorage.getItem('vp_use_shot'); if (us != null) useCountShotWrite = parseInt(us) || 0;
+    const ue = localStorage.getItem('vp_use_excel'); if (ue != null) useCountExcelImport = parseInt(ue) || 0;
+  } catch(e) { scriptText = ''; shots = []; currentStage = 0; scriptSource = ''; excelData = null; globalEditTasks = { editCut: false, editColor: false, editSound: false }; summaryDone = {}; isMember = false; useCountShotWrite = 0; useCountExcelImport = 0; }
+}
+
+// ===== Stepper =====
+function renderStepper() {
+  const c = document.getElementById('stepper');
+  let html = '';
+  STAGES.forEach((stage, i) => {
+    const cls = i === currentStage ? 'active' : (i < currentStage ? 'completed' : '');
+    const content = i < currentStage ? '✓' : (i + 1);
+    html += `<div class="step ${cls}" onclick="goToStage(${i})"><div class="step-circle">${content}</div><div class="step-label">${stage.icon} ${stage.name}</div></div>`;
+    if (i < STAGES.length - 1) html += `<div class="step-connector ${i < currentStage ? 'completed' : ''}"></div>`;
+  });
+  c.innerHTML = html;
+}
+function goToStage(i) { currentStage = i; saveData(); renderStepper(); renderStage(); }
+
+function renderStage() {
+  document.querySelectorAll('.stage-panel').forEach((p, i) => p.classList.toggle('active', i === currentStage));
+  if (currentStage === 0) renderScriptStage();
+  if (currentStage === 1) renderShootStage();
+  if (currentStage === 2) renderEditStage();
+  if (currentStage === 3) renderCompleteStage();
+}
+
+// ===== Input Mode Switching =====
+function switchInputMode(mode) {
+  document.querySelectorAll('.input-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.input-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + mode).classList.add('active');
+  document.getElementById('panel-' + mode).classList.add('active');
+}
+
+// ===== 镜头编写 (Manual Shot Writer) =====
+let writeOrder = 1;
+
+function updateWriteDuration() {
+  const voice = document.getElementById('write-voice').value;
+  const len = (voice || '').replace(/\s/g, '').length;
+  const dur = len ? Math.round(len / 19 * 3) : 0;
+  document.getElementById('write-duration').value = String(dur);
+}
+
+// ===== 视频存储（IndexedDB）=====
+let _videoDB = null;
+function openVideoDB() {
+  return new Promise((resolve, reject) => {
+    if (_videoDB) { resolve(_videoDB); return; }
+    const req = indexedDB.open('vp_videos', 1);
+    req.onupgradeneeded = function(e) {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('videos')) db.createObjectStore('videos', { keyPath: 'shotId' });
+    };
+    req.onsuccess = function(e) { _videoDB = e.target.result; resolve(_videoDB); };
+    req.onerror = function(e) { reject(e); };
+  });
+}
+async function saveShotVideo(shotId, file) {
+  try {
+    const db = await openVideoDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction('videos', 'readwrite');
+      tx.objectStore('videos').put({ shotId: shotId, name: file.name, type: file.type, data: file, size: file.size });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = (e) => reject(e);
+    });
+  } catch (e) { console.warn('saveShotVideo failed', e); return false; }
+}
+async function getShotVideo(shotId) {
+  try {
+    const db = await openVideoDB();
+    return await new Promise((resolve) => {
+      const tx = db.transaction('videos', 'readonly');
+      const r = tx.objectStore('videos').get(shotId);
+      r.onsuccess = () => resolve(r.result || null);
+      r.onerror = () => resolve(null);
+    });
+  } catch (e) { return null; }
+}
+async function deleteShotVideo(shotId) {
+  try {
+    const db = await openVideoDB();
+    return await new Promise((resolve) => {
+      const tx = db.transaction('videos', 'readwrite');
+      tx.objectStore('videos').delete(shotId);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (e) { return false; }
+}
+
+// ===== 镜头编写：视频上传 =====
+function handleWriteVideoSelect(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('video/')) { showToast('请选择视频文件', 'error'); input.value = ''; return; }
+  pendingWriteVideo = file;
+  // 镜头描述自动获取视频名称
+  document.getElementById('write-desc').value = file.name;
+  document.getElementById('write-video-text').textContent = file.name;
+  document.getElementById('write-video-name').style.display = 'inline-flex';
+  updateWriteDuration();
+  showToast('已选择视频：' + file.name, 'success');
+}
+function clearWriteVideo() {
+  pendingWriteVideo = null;
+  const input = document.getElementById('write-video-input');
+  if (input) input.value = '';
+  document.getElementById('write-video-name').style.display = 'none';
+  document.getElementById('write-video-text').textContent = '';
+}
+
+function addWriteShotToShoot() {
+  if (!canUseShotWrite()) { showMemberLimitModal('shot'); return; }
+  const desc = document.getElementById('write-desc').value.trim();
+  const voice = document.getElementById('write-voice').value.trim();
+  const dur = document.getElementById('write-duration').value || '0';
+
+  if (!desc && !voice) {
+    showToast('请先填写镜头描述或口播内容', 'error');
+    return;
+  }
+
+  const shot = {
+    id: Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+    order: writeOrder,
+    name: '镜头 ' + writeOrder,
+    shotType: '中景',
+    cameraMove: '固定',
+    duration: dur || '',
+    desc: desc,
+    note: voice,
+    indoorDone: false,
+    outdoorDone: false,
+    scene: '',
+    videoName: pendingWriteVideo ? pendingWriteVideo.name : ''
+  };
+  shots.push(shot);
+  useCountShotWrite++;
+  renderMemberUI();
+  shots.sort((a, b) => a.order - b.order);
+  scriptSource = 'manual';
+  // 保存参考视频到 IndexedDB
+  if (pendingWriteVideo) {
+    saveShotVideo(shot.id, pendingWriteVideo);
+    pendingWriteVideo = null;
+  }
+  saveData();
+
+  // 镜头编号自动 +1，并清空描述与口播
+  writeOrder += 1;
+  document.getElementById('write-order').value = String(writeOrder);
+  document.getElementById('write-desc').value = '';
+  document.getElementById('write-voice').value = '';
+  document.getElementById('write-duration').value = '0';
+  clearWriteVideo();
+
+  renderScriptStage();
+  showToast('✓ 已添加镜头 ' + shot.order + ' 到拍摄', 'success');
+  goToStage(1);
+}
+
+function resetWriteForm() {
+  document.getElementById('write-desc').value = '';
+  document.getElementById('write-voice').value = '';
+  document.getElementById('write-duration').value = '0';
+  clearWriteVideo();
+  showToast('已清空镜头描述与口播', 'info');
+}
+
+function initWriteOrder() {
+  let max = 0;
+  shots.forEach(s => { if (typeof s.order === 'number' && s.order > max) max = s.order; });
+  writeOrder = max + 1;
+  const el = document.getElementById('write-order');
+  if (el) el.value = String(writeOrder);
+}
+
+// ===== Replace Modal (close helper, shared by Excel) =====
+function closeReplaceModal() {
+  document.getElementById('replace-modal').classList.remove('show');
+  pendingAction = null;
+}
+
+// ===== Excel Upload & Parse =====
+function handleExcelUpload(event) {
+  const files = Array.from(event.target.files);
+  event.target.value = ''; // Reset immediately so same file can be re-uploaded
+  if (files.length === 0) return;
+  const file = files[0];
+
+  if (shots.length > 0) {
+    pendingAction = 'excel';
+    pendingFile = file;
+    document.getElementById('replace-count').textContent = shots.length;
+    document.getElementById('replace-modal').classList.add('show');
+    return;
+  }
+
+  doParseExcel(file);
+}
+
+let pendingFile = null;
+
+function doParseExcel(file) {
+  if (!file) return;
+  if (!canUseExcelImport()) { showMemberLimitModal('excel'); return; }
+  closeReplaceModal();
+
+  var container = document.getElementById('excel-info-container');
+
+  // If XLSX library not loaded yet, wait for it then auto-retry
+  if (typeof XLSX === 'undefined') {
+    if (container) container.innerHTML = '<div class="excel-loading"><div class="spinner"></div><div>⏳ 正在加载解析库...</div></div>';
+    showToast('⏳ 正在加载解析库，请稍候...', 'success');
+    waitForLibrary('XLSX', 60000).then(function() {
+      doParseExcel(file);
+    }).catch(function() {
+      if (container) container.innerHTML = '<div class="excel-loading" style="color:var(--danger)"><div>⚠️ 解析库加载失败</div><button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="retryPreload()">重新加载</button></div>';
+      showToast('Excel 解析库加载失败，点击顶部"重试"或刷新页面', 'error');
+    });
+    return;
+  }
+
+  // Show parsing state
+  if (container) container.innerHTML = '<div class="excel-loading"><div class="spinner"></div><div>📊 正在解析表格...</div></div>';
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rawRows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+
+      if (rawRows.length === 0) {
+        if (container) container.innerHTML = '';
+        showToast('Excel 表格为空', 'error');
+        return;
+      }
+
+      // Detect header row and build column mapping
+      const { headers, headerRowIndex, mapping, dataRows } = detectHeaderAndMap(rawRows);
+
+      // Build shots from data rows
+      const newShots = dataRows.map((row, i) => {
+        const order = mapping.order != null ? parseInt(row[mapping.order]) || (i + 1) : (i + 1);
+        const name = mapping.name != null ? String(row[mapping.name] || '').trim() : `镜头 ${order}`;
+        const shotType = mapping.shotType != null ? String(row[mapping.shotType] || '').trim() : '中景';
+        const cameraMove = mapping.cameraMove != null ? String(row[mapping.cameraMove] || '').trim() : '固定';
+        const duration = mapping.duration != null ? (row[mapping.duration] !== '' && row[mapping.duration] != null ? String(parseInt(row[mapping.duration]) || '') : '') : '';
+        const desc = mapping.desc != null ? String(row[mapping.desc] || '').trim() : '';
+        const note = mapping.note != null ? String(row[mapping.note] || '').trim() : '';
+
+        return {
+          id: Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+          order: order,
+          name: name || `镜头 ${order}`,
+          shotType: shotType || '中景',
+          cameraMove: cameraMove || '固定',
+          duration: duration,
+          desc: desc,
+          note: note,
+          indoorDone: false,
+          outdoorDone: false,
+          scene: ''
+        };
+      }).filter(s => s.name || s.desc || s.order);
+
+      if (newShots.length === 0) {
+        if (container) container.innerHTML = '';
+        showToast('未能从表格中提取到镜头数据', 'error');
+        return;
+      }
+
+      // Sort by order
+      newShots.sort((a, b) => a.order - b.order);
+
+      shots = newShots;
+      useCountExcelImport++;
+      renderMemberUI();
+      scriptSource = 'excel';
+      summaryDone = {}; // 重新导入/替换镜头时，镜头总表的「完成」勾选一并清空重置
+
+      // Store Excel metadata for display
+      excelData = {
+        fileName: file.name,
+        fileSize: file.size,
+        headers: headers,
+        mapping: mapping,
+        totalRows: dataRows.length,
+        uploadedAt: new Date().toISOString()
+      };
+
+      saveData();
+      renderScriptStage();
+      showToast(`✓ 从 Excel 中提取了 ${newShots.length} 个镜头`, 'success');
+      goToStage(1);
+    } catch(err) {
+      console.error('Excel parse error:', err);
+      if (container) container.innerHTML = '';
+      showToast('Excel 解析失败: ' + (err.message || err), 'error');
+    }
+  };
+  reader.onerror = function() {
+    if (container) container.innerHTML = '';
+    showToast('文件读取失败，请重试', 'error');
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// Detect header row and build column mapping
+function detectHeaderAndMap(rawRows) {
+  // Column name keywords for mapping
+  const keywords = {
+    order:      ['序号', '编号', '镜号', '镜头号', '号', 'no', 'No', 'NO', '序'],
+    name:       ['镜头名称', '名称', '标题', '镜头名', '题目', '标题'],
+    shotType:   ['景别', '类型', '镜头类型', '景'],
+    cameraMove: ['运镜', '运镜方式', '运动', '拍摄方式', '镜法'],
+    duration:   ['时长', '时间', '秒', '长度', 'duration', '时长（秒）'],
+    desc:       ['描述', '内容', '画面', '镜头描述', '剧情', '场景', '镜头'],
+    note:       ['字幕', '备注', '补充', '台词', '旁白', 'subtitle']
+  };
+
+  let headerRowIndex = -1;
+  let mapping = {};
+  let headers = [];
+  let bestMatchCount = 0;
+  let dataRows = [];
+
+  // Search first 10 rows for header
+  for (let r = 0; r < Math.min(rawRows.length, 10); r++) {
+    const row = rawRows[r];
+    const matchCount = {};
+    let totalMatches = 0;
+
+    for (const field in keywords) {
+      matchCount[field] = -1;
+      for (let c = 0; c < row.length; c++) {
+        const cell = String(row[c] || '').trim().toLowerCase();
+        if (!cell) continue;
+        for (const kw of keywords[field]) {
+          if (cell.includes(kw.toLowerCase())) {
+            matchCount[field] = c;
+            totalMatches++;
+            break;
+          }
+        }
+      }
+    }
+
+    if (totalMatches >= 2 && totalMatches > bestMatchCount) {
+      bestMatchCount = totalMatches;
+      headerRowIndex = r;
+      mapping = { ...matchCount };
+      headers = row.map(c => String(c || '').trim());
+    }
+  }
+
+  // If no header found, use first column as order, infer others by position
+  if (headerRowIndex === -1) {
+    headers = rawRows[0].map((_, i) => `列${i + 1}`);
+    // Try to find first numeric column as order
+    let orderCol = -1;
+    for (let c = 0; c < (rawRows[0] || []).length; c++) {
+      const val = String(rawRows[0][c] || '').trim();
+      if (/^\d+$/.test(val)) { orderCol = c; break; }
+    }
+    mapping = {
+      order: orderCol >= 0 ? orderCol : 0,
+      name: 1,
+      shotType: -1,
+      cameraMove: -1,
+      duration: -1,
+      desc: 2,
+      note: -1
+    };
+    headerRowIndex = -1;
+    dataRows = rawRows;
+  } else {
+    dataRows = rawRows.slice(headerRowIndex + 1);
+  }
+
+  return { headers, headerRowIndex, mapping, dataRows };
+}
+
+// ===== Stage 1: Script =====
+function renderScriptStage() {
+  const totalShots = shots.length;
+
+  // Source badge
+  const sourceBadge = document.getElementById('script-source-badge');
+  if (scriptSource === 'excel' && excelData) {
+    sourceBadge.textContent = `📊 ${excelData.fileName}`;
+  } else if (scriptSource === 'manual') {
+    sourceBadge.textContent = `✍️ 手动编写 ${totalShots} 镜头`;
+  } else {
+    sourceBadge.textContent = '未输入';
+  }
+
+  document.getElementById('script-shot-badge').textContent = `${totalShots} 个镜头`;
+
+  // Switch to the correct tab based on source
+  if (scriptSource === 'excel') {
+    switchInputMode('excel');
+  } else {
+    switchInputMode('write');
+  }
+
+  // Render Excel info if available
+  renderExcelInfo();
+
+  // Render preview
+  const container = document.getElementById('preview-container');
+
+  if (totalShots === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const sourceLabel = scriptSource === 'excel' ? 'Excel 表格' : '手动编写';
+
+  let html = `
+    <div class="parsed-preview">
+      <div class="parsed-header">
+        <span class="parsed-header-text">${scriptSource === 'manual' ? '✓ 已手动添加' : '✓ 从'+sourceLabel+'中提取了'} ${totalShots} 个镜头（已同步到拍摄阶段）</span>
+        <button class="btn btn-outline btn-sm" onclick="goToStage(1)">前往拍摄阶段 →</button>
+      </div>
+      <div class="parsed-list">
+  `;
+
+  shots.forEach(shot => {
+    const metaParts = [];
+    if (shot.duration) metaParts.push(`⏱ ${parseInt(shot.duration)}秒`);
+    if (shot.shotType && shot.shotType !== '中景') metaParts.push(`🎬 ${shot.shotType}`);
+    if (shot.cameraMove && shot.cameraMove !== '固定') metaParts.push(`🎥 ${shot.cameraMove}`);
+    if (shot.note) metaParts.push(`💬 ${escapeHtml(shot.note.substring(0, 30))}`);
+
+    html += `
+      <div class="parsed-item">
+        <div class="parsed-num">${shot.order}</div>
+        <div class="parsed-content">
+          ${escapeHtml(shot.desc || shot.name || '(无描述)')}
+          ${metaParts.length > 0 ? `<div class="parsed-meta">${metaParts.join('')}</div>` : ''}
+        </div>
+      </div>`;
+  });
+
+  html += '</div></div>';
+  container.innerHTML = html;
+}
+
+function renderExcelInfo() {
+  const container = document.getElementById('excel-info-container');
+
+  if (!excelData || scriptSource !== 'excel') {
+    container.innerHTML = '';
+    return;
+  }
+
+  const m = excelData.mapping;
+  const h = excelData.headers;
+  const mappingLabels = [];
+
+  if (m.order >= 0) mappingLabels.push(`序号 ← ${h[m.order] || '列' + (m.order + 1)}`);
+  if (m.name >= 0) mappingLabels.push(`名称 ← ${h[m.name] || '列' + (m.name + 1)}`);
+  if (m.shotType >= 0) mappingLabels.push(`景别 ← ${h[m.shotType]}`);
+  if (m.cameraMove >= 0) mappingLabels.push(`运镜 ← ${h[m.cameraMove]}`);
+  if (m.duration >= 0) mappingLabels.push(`时长 ← ${h[m.duration]}`);
+  if (m.desc >= 0) mappingLabels.push(`描述 ← ${h[m.desc]}`);
+  if (m.note >= 0) mappingLabels.push(`备注/字幕 ← ${h[m.note]}`);
+
+  let html = `
+    <div class="excel-file-info">
+      <span class="file-icon">📊</span>
+      <div class="file-details">
+        <div class="file-name">${escapeHtml(excelData.fileName)}</div>
+        <div class="file-meta">${(excelData.fileSize / 1024).toFixed(1)} KB · ${excelData.totalRows} 行数据 · 上传于 ${new Date(excelData.uploadedAt).toLocaleString('zh-CN')}</div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('excel-file-input').click()">重新上传</button>
+    </div>
+    <div class="column-mapping-info">
+      <strong>📋 列映射：</strong>
+      <div class="mapping-list">
+        ${mappingLabels.map(l => `<span class="mapping-tag">${escapeHtml(l)}</span>`).join('')}
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = html;
+}
+
+// ===== Stage 2: Shooting =====
+// 拍摄阶段底部：镜头总表
+// 将各镜头卡片的「镜头描述」按 "/" 拆分为多个镜头；内容相同则去重并累加次数；
+// 序号按去重后的镜头数依次向后（1,2,3...），顺序为首次出现顺序。
+function buildShotSummary(items, pct) {
+  const kw = (summarySearchKeyword || '').toLowerCase(); // 镜头总表专用搜索：按镜头名称片段过滤
+  const map = new Map(); // 镜头内容 -> 次数（保持首次出现顺序）
+  items.forEach(function (it) {
+    if (!shotHasVoice(it.shot)) return; // 口播内容为空，当前序号不计入镜头总表
+    const segs = (it.shot.desc || '').split('/');
+    segs.forEach(function (seg) {
+      const s = seg.trim();
+      if (!s) return;
+      if (kw && s.toLowerCase().indexOf(kw) === -1) return; // 仅保留命中的镜头片段
+      map.set(s, (map.get(s) || 0) + 1);
+    });
+  });
+  let rows = '';
+  let no = 1;
+  // 按总次数加权统计：已勾选镜头的出现次数之和
+  let total = 0, doneWeighted = 0;
+  map.forEach(function (count, shot) {
+    const done = !!summaryDone[shot];
+    total += count;
+    if (done) doneWeighted += count;
+    rows += '<tr' + (done ? ' class="row-done"' : '') + '>'
+      + '<td class="col-no">' + no + '</td>'
+      + '<td class="col-shot">' + escapeHtml(shot) + '</td>'
+      + '<td class="col-count">' + count + '</td>'
+      + '<td class="col-done"><input type="checkbox" class="summary-done-chk" ' + (done ? 'checked' : '') + ' onchange="toggleSummaryDone(\'' + encodeURIComponent(shot) + '\', this.checked)"></td>'
+      + '</tr>';
+    no++;
+  });
+  const classes = map.size;
+  // 百分比按当前显示的（已按关键词过滤的）镜头片段加权计算，与表格行一致
+  const pctVal = total > 0 ? Math.round((doneWeighted / total) * 100) : 0;
+  // 空状态文案：区分「无镜头卡片 / 全部缺口播」与「关键词无命中」三种情况
+  const hasVoiceItems = items.some(function (it) { return shotHasVoice(it.shot); });
+  const noVoiceHint = (items.length > 0 && !hasVoiceItems)
+    ? '当前镜头均缺少「口播内容」，口播为空不计入镜头（填写口播内容后才会生成镜头）'
+    : '暂无镜头描述（在镜头卡片的「镜头描述」中用「/」分隔多个镜头即可自动拆分统计）';
+  const body = rows
+    ? '<table class="shot-summary-table"><thead><tr><th class="col-no">序号</th><th>镜头</th><th class="col-count">次数</th><th class="col-done">完成</th></tr></thead><tbody>' + rows + '</tbody></table>'
+    : '<div class="shot-summary-empty">' + (kw ? '未找到包含「' + escapeHtml(summarySearchKeyword) + '」的镜头名称' : noVoiceHint) + '</div>';
+  return '<div class="shot-summary">'
+    + '<div class="shot-summary-header">📋 镜头总表'
+      + '<span class="summary-sub">' + classes + ' 类镜头 · 共 ' + total + ' 次 · 已完成 ' + doneWeighted + ' 次</span>'
+      + '<span class="shot-summary-pct">' + pctVal + '%</span>'
+    + '</div>'
+    + '<div class="shot-summary-progress"><i style="width:' + pctVal + '%"></i></div>'
+    + body
+    + '</div>';
+}
+
+// 镜头总表：勾选/取消某类镜头的「完成」状态（按镜头内容记录，持久化保存）
+function toggleSummaryDone(enc, checked) {
+  const shot = decodeURIComponent(enc);
+  if (checked) summaryDone[shot] = true; else delete summaryDone[shot];
+  saveData();
+  renderShotSummary(); // 仅重渲染镜头总表：实时刷新百分比/计数，且停留在当前勾选位置，不滚动、不跳转
+}
+
+function renderShootStage() {
+  const container = document.getElementById('shot-list-shoot');
+
+  // 同步搜索框 UI 状态
+  const searchInput = document.getElementById('shoot-search-input');
+  if (searchInput && searchInput.value !== shootSearchKeyword) searchInput.value = shootSearchKeyword;
+  const searchClear = document.getElementById('shoot-search-clear');
+  if (searchClear) searchClear.style.display = shootSearchKeyword ? 'inline-flex' : 'none';
+  // 同步镜头总表专用搜索框 UI 状态（静态元素，避免重渲染失焦）
+  const sumInput = document.getElementById('summary-search-input');
+  if (sumInput && sumInput.value !== summarySearchKeyword) sumInput.value = summarySearchKeyword;
+  const sumClear = document.getElementById('summary-search-clear');
+  if (sumClear) sumClear.style.display = summarySearchKeyword ? 'inline-flex' : 'none';
+  const searchCount = document.getElementById('shoot-search-count');
+
+  // 视图过滤：只显示镜头拆解 / 只显示镜头总表（两个都不勾则都显示）
+  const vBreakChk = document.getElementById('view-breakdown-chk');
+  const vSumChk = document.getElementById('view-summary-chk');
+  const bOnly = vBreakChk ? vBreakChk.checked : false;
+  const sOnly = vSumChk ? vSumChk.checked : false;
+  const showBreak = bOnly || (!bOnly && !sOnly);
+  const showSum = sOnly || (!bOnly && !sOnly);
+  const breakdownSearch = document.getElementById('shoot-breakdown-search');
+  if (breakdownSearch) breakdownSearch.style.display = showBreak ? 'flex' : 'none';
+
+  if (shots.length === 0) {
+    container.innerHTML = emptyStateHTML('🎥', '暂无镜头', '请先在脚本阶段通过 Excel 表格 或 镜头编写 添加镜头');
+    updateProgress('shoot', 0, 0, 0);
+    if (searchCount) searchCount.textContent = '';
+    container.style.display = showBreak ? '' : 'none';
+    return;
+  }
+
+  // 按镜头描述关键词过滤（保留原始 idx，确保编辑/删除/完成等回调指向正确镜头）
+  const kw = shootSearchKeyword.toLowerCase();
+  const items = getShootItems();
+
+  // 镜头拆解进度按「可见镜头」（口播非空）计算，空缺播的镜头不计入完成度
+  const totalUnits = items.length * 2;
+  const doneUnits = items.reduce((a, it) => a + (it.shot.indoorDone ? 1 : 0) + (it.shot.outdoorDone ? 1 : 0), 0);
+  updateProgress('shoot', totalUnits > 0 ? Math.round((doneUnits / totalUnits) * 100) : 0, doneUnits, totalUnits);
+
+  if (searchCount) searchCount.textContent = kw ? (items.length + ' / ' + shots.length + ' 个镜头') : '';
+
+  if (items.length === 0) {
+    if (shootSearchKeyword) {
+      container.innerHTML = emptyStateHTML('🔍', '未找到匹配镜头', '没有镜头描述包含「' + escapeHtml(shootSearchKeyword) + '」，换个关键词试试');
+    } else if (shots.length > 0) {
+      // 有镜头卡片但全部缺口播：统一提示「口播为空不生成镜头卡片」
+      container.innerHTML = emptyStateHTML('🎤', '暂无有效镜头', '当前镜头均缺少「口播内容」，口播为空不生成镜头卡片、也不计入镜头总表（填写口播内容后即可显示）');
+    } else {
+      container.innerHTML = emptyStateHTML('🎥', '暂无镜头', '请先在脚本阶段通过 Excel 表格 或 镜头编写 添加镜头');
+    }
+    return;
+  }
+
+  // ===== 完成度计算与自动跳转剪辑页 =====
+  // 镜头拆解 100%：所有镜头卡片均标记「完成」（室内 且 室外）
+  const shootAllDone = totalUnits > 0 && doneUnits === totalUnits;
+  // 镜头总表 100%：按总次数加权，已勾选镜头次数之和 = 总次数
+  const sp = computeSummaryPct(items);
+  const summaryPct = sp.pct;
+  const summaryAllDone = sp.total > 0 && sp.doneWeighted === sp.total;
+
+  // 拍摄阶段内，镜头拆解 或 镜头总表 任一项达到 100% 即自动跳转到剪辑页
+  // （仅触发一次，离开 100% 后自动复位，避免反复跳转循环）
+  if (currentStage === 1 && (shootAllDone || summaryAllDone)) {
+    if (!autoJumpGuard) {
+      autoJumpGuard = true;
+      goToStage(2);
+      return;
+    }
+  } else {
+    autoJumpGuard = false;
+  }
+
+  function cardHtml(shot, idx) {
+    const finished = shot.indoorDone && shot.outdoorDone;
+    const _id = shot.id != null ? shot.id : idx;
+    const isEditing = editingShots.has(_id);
+    const roAttr = isEditing ? '' : 'readonly';
+    const dragAttr = (!isEditing && !batchMode) ? 'true' : 'false';
+    const selChecked = selectedShots.has(_id) ? 'checked' : '';
+    const batchChk = batchMode ? '<input type="checkbox" class="batch-check" ' + selChecked + ' onchange="toggleSelectShot(' + _id + ', this.checked)">' : '';
+    const actions = isEditing
+      ? '<button class="btn btn-sm btn-save" onclick="toggleEditShot(' + idx + ')">💾 保存</button>'
+      : '<button class="btn btn-sm btn-edit" onclick="toggleEditShot(' + idx + ')">✏️ 编辑</button>'
+      + '<button class="btn btn-sm btn-danger" onclick="deleteShot(' + idx + ')">🗑️ 删除</button>';
+    return ''
+      + '<div class="shot-card ' + (finished ? 'completed' : '') + (dragSrcIdx === idx ? ' dragging' : '') + '" draggable="' + dragAttr + '"'
+      + ' ondragstart="onShotDragStart(event, ' + idx + ')" ondragover="onShotDragOver(event, ' + idx + ')" ondragleave="onShotDragLeave(' + idx + ')" ondrop="onShotDrop(event, ' + idx + ')" ondragend="onShotDragEnd()">'
+      + '<div class="shot-card-header">'
+      + batchChk
+      + '<div class="shot-number">' + shot.order + '</div>'
+      + '<input class="field-input shot-card-title" value="' + escapeHtml(shot.name) + '" placeholder="镜头名称" readonly>'
+      + '<div class="shoot-flags">'
+      + '<div class="shoot-checkbox-wrapper ' + (shot.indoorDone ? 'checked' : '') + '" onclick="toggleIndoorDone(' + idx + ')"><div class="shoot-checkbox"></div><span>🏠 室内</span></div>'
+      + '<div class="shoot-checkbox-wrapper ' + (shot.outdoorDone ? 'checked' : '') + '" onclick="toggleOutdoorDone(' + idx + ')"><div class="shoot-checkbox"></div><span>🌤️ 室外</span></div>'
+      + '<div class="shoot-checkbox-wrapper finished-flag ' + (finished ? 'checked' : '') + '" onclick="toggleFinished(' + idx + ')"><div class="shoot-checkbox"></div><span>完成</span></div>'
+      + '</div></div>'
+      + '<div class="shot-card-body"><div class="shot-fields">'
+      + '<div class="field-group"><label class="field-label">预计时长（秒）' + (shot.duration ? ' ✓' : '') + '</label><input class="field-input" type="number" min="1" step="1" value="' + (shot.duration ? parseInt(shot.duration) : '') + '" placeholder="如 5" readonly></div>'
+      + '<div class="field-group full"><label class="field-label">镜头描述</label><textarea class="field-textarea" id="desc-' + idx + '" placeholder="描述这个镜头的内容..." ' + roAttr + ' onchange="updateField(' + idx + ', ' + "'desc'" + ', this.value)">' + escapeHtml(shot.desc || '') + '</textarea></div>'
+      + '<div class="field-group"><label class="field-label">口播内容' + (shot.note ? ' 💬' : '') + '</label><textarea class="field-input field-textarea-auto" id="note-' + idx + '" placeholder="填写口播内容" oninput="autoResize(this)" ' + roAttr + ' onchange="updateField(' + idx + ', ' + "'note'" + ', this.value)">' + escapeHtml(shot.note || '') + '</textarea></div>'
+      + '</div><div class="shot-actions">' + actions + '</div>'
+      + videoTagHtml(shot, idx, _id)
+      + '</div></div>';
+  }
+
+  function videoTagHtml(shot, idx, _id) {
+    if (!shot.videoName) return '';
+    return '<div class="shot-video-tag">🎬 <span>' + escapeHtml(shot.videoName) + '</span>'
+      + '<a href="javascript:void(0)" onclick="playShotVideo(' + JSON.stringify(_id) + ')">▶ 播放</a>'
+      + '<span class="vn-clear" onclick="removeShotVideo(' + idx + ')" title="移除视频">✕</span></div>';
+  }
+
+  let html = '';
+  if (groupByScene) {
+    const groups = [];
+    const map = {};
+    items.forEach(function (it) {
+      const key = (it.shot.scene && it.shot.scene.trim()) ? it.shot.scene.trim() : '未分组';
+      if (typeof map[key] === 'undefined') { map[key] = groups.length; groups.push({ key: key, items: [] }); }
+      groups[map[key]].items.push(it);
+    });
+    groups.forEach(function (g) {
+      const total = g.items.reduce(function (a, it) { return a + (parseInt(it.shot.duration) || 0); }, 0);
+      const collapsed = collapsedGroups.has(g.key);
+      html += '<div class="shot-group">'
+        + '<div class="shot-group-header" onclick="toggleGroupCollapse(' + encodeURIComponent(g.key) + ')">'
+        + '<span class="group-name">🗂 ' + escapeHtml(g.key) + '</span>'
+        + '<span class="group-meta">' + g.items.length + ' 个镜头 · 总时长 ' + total + ' 秒</span>'
+        + '<span class="group-toggle">' + (collapsed ? '▸' : '▾') + '</span></div>'
+        + '<div class="shot-group-body" style="' + (collapsed ? 'display:none;' : '') + '">'
+        + g.items.map(function (it) { return cardHtml(it.shot, it.idx); }).join('')
+        + '</div></div>';
+    });
+  } else {
+    html = items.map(function (it) { return cardHtml(it.shot, it.idx); }).join('');
+  }
+  container.innerHTML = html;
+  container.querySelectorAll('.field-textarea-auto').forEach(function(el) { autoResize(el); });
+
+  // 镜头总表渲染到独立容器（位于专用搜索框之下），避免重渲染时输入框失焦
+  const sumContainer = document.getElementById('shot-summary-container');
+  const sumWrap = document.getElementById('summary-search-wrap');
+  if (sumContainer) {
+    if (showSum && shots.length > 0 && items.length > 0) {
+      sumContainer.innerHTML = buildShotSummary(items, summaryPct);
+      sumContainer.style.display = '';
+      if (sumWrap) sumWrap.style.display = 'flex';
+    } else {
+      sumContainer.innerHTML = '';
+      sumContainer.style.display = 'none';
+      if (sumWrap) sumWrap.style.display = 'none';
+    }
+  }
+  // 视图过滤：未勾选「只显示镜头总表」时隐藏镜头拆解卡片列表
+  container.style.display = showBreak ? '' : 'none';
+}
+
+// 镜头总表仅统计「口播内容」非空的镜头卡片（口播为空则不计入镜头）
+function shotHasVoice(shot) {
+  return !!(shot.note && shot.note.trim());
+}
+
+// 拍摄阶段：按镜头描述关键词过滤，返回 [{shot, idx}]（保留原始下标）
+// 口播内容为空的不生成镜头卡片，也不计入镜头总表（统一在此过滤，卡片列表与总表共用）
+function getShootItems() {
+  const kw = shootSearchKeyword.toLowerCase();
+  const items = [];
+  shots.forEach(function (shot, i) {
+    if (!shotHasVoice(shot)) return; // 口播为空：不生成镜头卡片，也不计入镜头总表
+    if (kw && (shot.desc || '').toLowerCase().indexOf(kw) === -1) return;
+    items.push({ shot: shot, idx: i });
+  });
+  return items;
+}
+
+// 镜头总表完成度：按总次数加权，返回 { pct, total, doneWeighted }
+function computeSummaryPct(items) {
+  let total = 0, doneWeighted = 0;
+  const map = new Map();
+  items.forEach(function (it) {
+    if (!shotHasVoice(it.shot)) return; // 口播内容为空，当前序号不计入镜头总表
+    (it.shot.desc || '').split('/').forEach(function (seg) {
+      const s = seg.trim(); if (!s) return;
+      map.set(s, (map.get(s) || 0) + 1);
+    });
+  });
+  map.forEach(function (cnt, shot) { total += cnt; if (summaryDone[shot]) doneWeighted += cnt; });
+  return { pct: total > 0 ? Math.round((doneWeighted / total) * 100) : 0, total: total, doneWeighted: doneWeighted };
+}
+
+// 仅重渲染镜头总表（不动上方卡片列表，避免手机勾选后滚动位置跳动）
+function renderShotSummary() {
+  const items = getShootItems();
+  const sumContainer = document.getElementById('shot-summary-container');
+  const sumWrap = document.getElementById('summary-search-wrap');
+  if (!sumContainer) return;
+  if (shots.length > 0 && items.length > 0) {
+    sumContainer.innerHTML = buildShotSummary(items, computeSummaryPct(items).pct);
+    sumContainer.style.display = '';
+    if (sumWrap) sumWrap.style.display = 'flex';
+  } else {
+    sumContainer.innerHTML = '';
+    sumContainer.style.display = 'none';
+    if (sumWrap) sumWrap.style.display = 'none';
+  }
+}
+
+// 拍摄标签页视图过滤：只显示镜头拆解 / 只显示镜头总表
+// 两个都不勾 → 都显示；单独勾选其一 → 隐藏另一种，只显示当前勾选内容
+function onToggleView(which, checked) {
+  renderShootStage();
+}
+
+// 拍摄阶段：按关键词搜索镜头描述
+function onShootSearch(val) {
+  shootSearchKeyword = (val || '').trim();
+  const clearBtn = document.getElementById('shoot-search-clear');
+  if (clearBtn) clearBtn.style.display = shootSearchKeyword ? 'inline-flex' : 'none';
+  renderShootStage();
+}
+function clearShootSearch() {
+  shootSearchKeyword = '';
+  const inp = document.getElementById('shoot-search-input');
+  if (inp) inp.value = '';
+  const clearBtn = document.getElementById('shoot-search-clear');
+  if (clearBtn) clearBtn.style.display = 'none';
+  renderShootStage();
+}
+
+// 镜头总表专用搜索：按镜头名称片段过滤总表
+function onSummarySearch(val) {
+  summarySearchKeyword = (val || '').trim();
+  const clearBtn = document.getElementById('summary-search-clear');
+  if (clearBtn) clearBtn.style.display = summarySearchKeyword ? 'inline-flex' : 'none';
+  renderShootStage();
+}
+function clearSummarySearch() {
+  summarySearchKeyword = '';
+  const inp = document.getElementById('summary-search-input');
+  if (inp) inp.value = '';
+  const clearBtn = document.getElementById('summary-search-clear');
+  if (clearBtn) clearBtn.style.display = 'none';
+  renderShootStage();
+}
+
+// 拍摄镜头编辑模式：默认只读，点击「编辑」可改镜头描述 / 口播内容，再点「保存」落盘
+let editingShots = new Set();
+function toggleEditShot(idx) {
+  const shot = shots[idx];
+  if (!shot) return;
+  const id = shot.id != null ? shot.id : idx;
+  if (editingShots.has(id)) {
+    saveShotEdit(idx);
+  } else {
+    editingShots.add(id);
+    renderShootStage();
+  }
+}
+function saveShotEdit(idx) {
+  const shot = shots[idx];
+  if (!shot) return;
+  const d = document.getElementById('desc-' + idx);
+  const n = document.getElementById('note-' + idx);
+  if (d) updateField(idx, 'desc', d.value);
+  if (n) {
+    updateField(idx, 'note', n.value);
+    // 预计时长按口播内容字符数重算：Math.round(字符数 / 19 * 3)，取整数
+    const _len = (n.value || '').replace(/\s/g, '').length;
+    const _dur = _len ? Math.round(_len / 19 * 3) : 0;
+    updateField(idx, 'duration', String(_dur));
+  }
+  const id = shot.id != null ? shot.id : idx;
+  editingShots.delete(id);
+  saveData();
+  renderShootStage();
+}
+
+// ===== 镜头管理：拖拽排序 / 复制 / 批量选择删除 / 按场景分组 =====
+let batchMode = false;
+let groupByScene = false;
+let shootSearchKeyword = '';   // 拍摄阶段搜索关键词（按镜头描述过滤卡片）
+let summarySearchKeyword = ''; // 镜头总表专用搜索关键词（按镜头名称片段过滤总表）
+const selectedShots = new Set();
+const collapsedGroups = new Set();
+let dragSrcIdx = null;
+
+// 重新连续编号 1,2,3...；同步镜头名称中的序号数字与镜头号；同步镜头编写计数器
+function renumberShots() {
+  shots.forEach(function (s, i) {
+    const newOrder = i + 1;
+    if (s.name) {
+      s.name = s.name.replace(new RegExp('\\b' + s.order + '\\b'), String(newOrder));
+    }
+    s.order = newOrder;
+  });
+  writeOrder = shots.length + 1;
+}
+
+// 删除镜头：删除当前镜头后，后续镜头号与内容自动前移并重新连续编号
+function deleteShot(idx) {
+  const shot = shots[idx];
+  if (!shot) return;
+  const name = shot.name || ('镜头 ' + shot.order);
+  document.getElementById('delete-shot-name').textContent = name;
+  document.getElementById('delete-shot-modal').classList.add('show');
+  const btn = document.getElementById('delete-shot-confirm-btn');
+  btn.onclick = function() {
+    const id = shot.id != null ? shot.id : idx;
+    deleteShotVideo(id);
+    shots.splice(idx, 1);
+    renumberShots();
+    editingShots.delete(id);
+    selectedShots.delete(id);
+    saveData();
+    renderShootStage();
+    closeDeleteShotModal();
+    showToast('已删除镜头', 'success');
+  };
+}
+function closeDeleteShotModal() { document.getElementById('delete-shot-modal').classList.remove('show'); }
+
+// 播放镜头参考视频
+async function playShotVideo(shotId) {
+  const rec = await getShotVideo(shotId);
+  if (!rec || !rec.data) { showToast('视频不存在或已被清除', 'error'); return; }
+  const url = URL.createObjectURL(rec.data);
+  window.open(url, '_blank');
+  setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
+}
+
+// 移除镜头参考视频
+async function removeShotVideo(idx) {
+  const shot = shots[idx];
+  if (!shot || !shot.videoName) return;
+  await deleteShotVideo(shot.id != null ? shot.id : idx);
+  shot.videoName = '';
+  saveData();
+  renderShootStage();
+  showToast('已移除视频', 'success');
+}
+
+// 复制镜头：在当前镜头之后插入一份副本（已完成状态重置），重新编号
+function duplicateShot(idx) {
+  const shot = shots[idx];
+  if (!shot) return;
+  const copy = Object.assign({}, shot);
+  copy.id = Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  copy.indoorDone = false;
+  copy.outdoorDone = false;
+  shots.splice(idx + 1, 0, copy);
+  renumberShots();
+  saveData();
+  renderShootStage();
+  showToast('已复制镜头 ' + copy.order, 'success');
+}
+
+// ===== 拖拽排序 =====
+function onShotDragStart(event, idx) {
+  dragSrcIdx = idx;
+  event.dataTransfer.effectAllowed = 'move';
+  try { event.dataTransfer.setData('text/plain', String(idx)); } catch (e) {}
+}
+function onShotDragOver(event, idx) {
+  if (dragSrcIdx === null) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+}
+function onShotDragLeave(idx) { /* visual no-op */ }
+function onShotDragEnd() {
+  const prev = dragSrcIdx;
+  dragSrcIdx = null;
+  if (prev !== null) renderShootStage();
+}
+function onShotDrop(event, targetIdx) {
+  event.preventDefault();
+  if (dragSrcIdx === null || dragSrcIdx === targetIdx) { dragSrcIdx = null; return; }
+  const moved = shots.splice(dragSrcIdx, 1)[0];
+  shots.splice(targetIdx, 0, moved);
+  renumberShots();
+  dragSrcIdx = null;
+  saveData();
+  renderShootStage();
+}
+
+// ===== 批量管理 =====
+function toggleBatchMode() {
+  batchMode = !batchMode;
+  if (!batchMode) selectedShots.clear();
+  renderShootStage();
+}
+function toggleSelectShot(id, checked) {
+  if (checked) selectedShots.add(id); else selectedShots.delete(id);
+  updateBatchCount();
+}
+function toggleSelectAll(checked) {
+  if (checked) shots.forEach(function (s) { selectedShots.add(s.id); });
+  else selectedShots.clear();
+  renderShootStage();
+}
+function updateBatchCount() {
+  const el = document.getElementById('batch-count');
+  if (el) el.textContent = '已选 ' + selectedShots.size;
+}
+function batchDelete() {
+  if (selectedShots.size === 0) { showToast('请先选择要删除的镜头', 'error'); return; }
+  shots = shots.filter(function (s) { return !selectedShots.has(s.id); });
+  renumberShots();
+  selectedShots.clear();
+  saveData();
+  renderShootStage();
+  showToast('已批量删除所选镜头', 'success');
+}
+
+// ===== 按场景分组 =====
+function toggleGroupByScene() {
+  groupByScene = !groupByScene;
+  renderShootStage();
+}
+function toggleGroupCollapse(key) {
+  const k = decodeURIComponent(key);
+  if (collapsedGroups.has(k)) collapsedGroups.delete(k); else collapsedGroups.add(k);
+  renderShootStage();
+}
+
+// Auto-resize textarea to fit content
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+
+// ===== Stage 3: Editing =====
+function renderEditStage() {
+  const container = document.getElementById('edit-tasks');
+  const tasks = [
+    { key: 'editCut', label: '剪片', icon: stageIcon('edit', 16), desc: '视频裁剪、拼接、节奏调整' },
+    { key: 'editColor', label: '调色', icon: stageIcon('palette', 16), desc: '色彩校正、风格调色' },
+    { key: 'editSound', label: '声音处理', icon: stageIcon('sound', 16), desc: '音效、配乐、混音' }
+  ];
+  // Use global edit flags (not per-shot)
+  if (typeof globalEditTasks === 'undefined') globalEditTasks = { editCut: false, editColor: false, editSound: false };
+  const done = tasks.filter(t => globalEditTasks[t.key]).length;
+  updateProgress('edit', Math.round((done / 3) * 100), done, 3);
+
+  let html = '<div style="display:grid;gap:16px;margin-top:20px;">';
+  tasks.forEach(t => {
+    const checked = globalEditTasks[t.key];
+    html += `
+      <div class="edit-task-card ${checked ? 'done' : ''}" onclick="toggleEditTask('${t.key}')">
+        <div class="edit-checkbox-wrapper ${checked ? 'checked' : ''}" style="pointer-events:none;">
+          <div class="edit-checkbox"></div>
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px;">
+            ${t.icon} ${t.label} ${checked ? '<span class="status-badge status-done">已完成</span>' : ''}
+          </div>
+          <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">${t.desc}</div>
+        </div>
+      </div>`;
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function toggleEditTask(key) {
+  globalEditTasks[key] = !globalEditTasks[key];
+  saveData();
+  renderEditStage();
+  renderStepper();
+  checkAllComplete();
+}
+
+// ===== Stage 4: Complete =====
+function renderCompleteStage() {
+  const total = shots.length;
+  const shootFinished = shots.filter(s => s.indoorDone && s.outdoorDone).length;
+  const indoorDone = shots.filter(s => s.indoorDone).length;
+  const outdoorDone = shots.filter(s => s.outdoorDone).length;
+  const doneUnits = indoorDone + outdoorDone;
+  const totalUnits = total * 2;
+  const editChecksDone = (globalEditTasks.editCut?1:0) + (globalEditTasks.editColor?1:0) + (globalEditTasks.editSound?1:0);
+  const allDone = shootFinished === total && editChecksDone === 3 && total > 0;
+  const shootPct = totalUnits > 0 ? Math.round((doneUnits / totalUnits) * 100) : 0;
+  const editPct = Math.round((editChecksDone / 3) * 100);
+
+  document.getElementById('summary-grid').innerHTML = `
+    <div class="summary-card"><div class="num">${total}</div><div class="label">总镜头数</div></div>
+    <div class="summary-card green"><div class="num">${shootFinished}/${total}</div><div class="label">镜头拍完 (${shootPct}%)</div></div>
+    <div class="summary-card green"><div class="num">${editChecksDone}/3</div><div class="label">剪辑完成 (${editPct}%)</div></div>
+    <div class="summary-card ${allDone ? 'green' : 'orange'}"><div class="num">${allDone ? '✓' : '⏳'}</div><div class="label">${allDone ? '全部完成' : '进行中'}</div></div>`;
+
+  const container = document.getElementById('final-shot-list');
+  if (total === 0) { container.innerHTML = emptyStateHTML('<svg viewBox="0 0 16 16" width="56" height="56" aria-hidden="true"><circle cx="8" cy="8" r="6.4" fill="none" stroke="#b8a59d" stroke-width="1.2"/><path d="M5 8.2l2.2 2.2L11.2 6" fill="none" stroke="#b8a59d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>', '暂无数据', '请先在脚本阶段提取镜头'); return; }
+
+  // Editing tasks summary
+  let editHtml = '<div class="section-title" style="margin-top:24px;">' + stageIcon('edit', 16) + ' 剪辑任务</div>';
+  editHtml += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">';
+  editHtml += `<div class="summary-card ${globalEditTasks.editCut ? 'green' : ''}" style="min-width:120px;"><div class="num">${globalEditTasks.editCut ? stageIcon('done', 22) : '⬜'}</div><div class="label">剪片</div></div>`;
+  editHtml += `<div class="summary-card ${globalEditTasks.editColor ? 'green' : ''}" style="min-width:120px;"><div class="num">${globalEditTasks.editColor ? stageIcon('done', 22) : '⬜'}</div><div class="label">调色</div></div>`;
+  editHtml += `<div class="summary-card ${globalEditTasks.editSound ? 'green' : ''}" style="min-width:120px;"><div class="num">${globalEditTasks.editSound ? stageIcon('done', 22) : '⬜'}</div><div class="label">声音处理</div></div>`;
+  editHtml += '</div>';
+
+  let html = editHtml + '<div class="section-title">📋 镜头清单</div>';
+  shots.forEach(shot => {
+    const finished = shot.indoorDone && shot.outdoorDone;
+    html += `
+      <div class="shot-list-item">
+        <div class="shot-number" style="${finished ? 'background:var(--success);' : ''}">${shot.order}</div>
+        <div class="shot-list-info">
+          <div class="name">${escapeHtml(shot.name)}</div>
+          <div class="desc">${shot.duration ? '⏱ '+parseInt(shot.duration)+'秒' : ''}</div>
+          ${shot.desc ? `<div class="desc" style="margin-top:4px;white-space:normal;">📝 ${escapeHtml(shot.desc.substring(0,100))}</div>` : ''}
+          ${shot.note ? `<div class="desc" style="margin-top:2px;white-space:normal;">💬 ${escapeHtml(shot.note.substring(0,80))}</div>` : ''}
+        </div>
+        <div class="shot-list-actions" style="font-size:13px;">
+          <span>🏠 ${shot.indoorDone ? stageIcon('done', 14) : '⬜'} &nbsp; 🌤️ ${shot.outdoorDone ? stageIcon('done', 14) : '⬜'}</span>
+        </div>
+      </div>`;
+  });
+  container.innerHTML = html;
+}
+
+// ===== Helpers =====
+function updateField(idx, field, value) {
+  if (shots[idx]) {
+    shots[idx][field] = value;
+    saveData();
+    // 镜头描述（按 / 拆分统计）改变后，刷新底部镜头总表
+    if (field === 'desc' && currentStage === 1) renderShootStage();
+  }
+}
+function checkAllComplete() {
+  const total = shots.length;
+  const shootComplete = total > 0 && shots.every(s => s.indoorDone && s.outdoorDone);
+  const editDone = globalEditTasks.editCut && globalEditTasks.editColor && globalEditTasks.editSound;
+  if (shootComplete && editDone) {
+    setTimeout(() => {
+      currentStage = 3;
+      saveData();
+      renderStepper();
+      renderStage();
+      showToast('🎉 拍摄+剪辑全部完成，已进入完成阶段！', 'success');
+    }, 400);
+    return true;
+  }
+  return false;
+}
+
+function toggleIndoorDone(idx) {
+  if (!shots[idx]) return;
+  shots[idx].indoorDone = !shots[idx].indoorDone;
+  afterToggleShot();
+}
+function toggleOutdoorDone(idx) {
+  if (!shots[idx]) return;
+  shots[idx].outdoorDone = !shots[idx].outdoorDone;
+  afterToggleShot();
+}
+function toggleFinished(idx) {
+  const shot = shots[idx];
+  if (!shot) return;
+  const finished = shot.indoorDone && shot.outdoorDone;
+  if (finished) {
+    // 取消完成 → 室内、室外同时取消
+    shot.indoorDone = false;
+    shot.outdoorDone = false;
+  } else {
+    // 勾选完成 → 室内、室外同时勾选
+    shot.indoorDone = true;
+    shot.outdoorDone = true;
+  }
+  afterToggleShot();
+}
+function afterToggleShot() {
+  saveData();
+  renderShootStage();
+  renderStepper();
+  // Check if both shooting + editing done → go to complete stage
+  if (!checkAllComplete()) {
+    // If all shots fully done (indoor+outdoor) but editing not done → go to editing stage
+    const allShootDone = shots.length > 0 && shots.every(s => s.indoorDone && s.outdoorDone);
+    if (allShootDone) {
+      setTimeout(() => {
+        currentStage = 2;
+        saveData();
+        renderStepper();
+        renderStage();
+        showToast('🎬 拍摄全部完成，已进入剪辑阶段！', 'success');
+      }, 400);
+    }
+  }
+}
+
+function updateProgress(type, pct, done, total) {
+  const fill = document.getElementById(`${type}-progress-fill`);
+  const text = document.getElementById(`${type}-progress-text`);
+  const meta = document.getElementById(`${type}-progress-meta`);
+  if (fill) { fill.style.width = pct + '%'; fill.classList.toggle('done', pct === 100); }
+  if (text) { text.textContent = pct + '%'; text.classList.toggle('done', pct === 100); }
+  if (meta) meta.textContent = `${done} / ${total} 已完成`;
+}
+function emptyStateHTML(icon, title, desc) { return `<div class="empty-state"><div class="icon">${icon}</div><div class="title">${title}</div><div class="desc">${desc}</div></div>`; }
+function escapeHtml(str) { if (!str) return ''; const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+function showToast(msg, type) { const t = document.getElementById('toast'); t.textContent = msg; t.className = 'toast show ' + (type || ''); setTimeout(() => t.className = 'toast', 2500); }
+
+// ===== Replace Modal Handler =====
+document.addEventListener('DOMContentLoaded', function() {
+  const confirmBtn = document.getElementById('replace-confirm-btn');
+  confirmBtn.addEventListener('click', function() {
+    if (pendingAction === 'excel' && pendingFile) {
+      doParseExcel(pendingFile);
+      pendingFile = null;
+    }
+  });
+});
+
+// ===== Excel Drag & Drop =====
+document.addEventListener('DOMContentLoaded', function() {
+  const dropZone = document.getElementById('excel-drop-zone');
+  if (dropZone) {
+    dropZone.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', function(e) {
+      dropZone.classList.remove('dragover');
+    });
+    dropZone.addEventListener('drop', function(e) {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        const file = files[0];
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (['xlsx', 'xls', 'csv'].includes(ext)) {
+          if (shots.length > 0) {
+            pendingAction = 'excel';
+            pendingFile = file;
+            document.getElementById('replace-count').textContent = shots.length;
+            document.getElementById('replace-modal').classList.add('show');
+          } else {
+            doParseExcel(file);
+          }
+        } else {
+          showToast('请上传 .xlsx / .xls / .csv 文件', 'error');
+        }
+      }
+    });
+  }
+});
+
+// ===== 下载脚本空表 =====
+const SCRIPT_TEMPLATE_B64 = "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";
+function downloadScriptTemplate() {
+  try {
+    const bin = atob(SCRIPT_TEMPLATE_B64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "脚本空表.xlsx"; a.click();
+    URL.revokeObjectURL(url);
+    showToast("脚本空表已开始下载", "success");
+  } catch (e) {
+    showToast("下载失败：" + e.message, "error");
+  }
+}
+
+// ===== Export =====
+function exportData() {
+  if (shots.length === 0) { showToast('暂无镜头可导出', 'error'); return; }
+  const rows = [['序号', '镜头描述', '口播内容', '预计时长']];
+  shots.forEach(function(s) {
+    rows.push([s.order || '', s.desc || '', s.note || '', s.duration || '']);
+  });
+  if (typeof XLSX !== 'undefined') {
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 8 }, { wch: 40 }, { wch: 50 }, { wch: 10 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '镜头总表');
+    XLSX.writeFile(wb, '镜头数据-' + new Date().toISOString().slice(0, 10) + '.xlsx');
+    showToast('Excel 已导出', 'success');
+  } else {
+    // Excel 组件未就绪时降级为 CSV（带 BOM，Excel 打开不乱码）
+    const csv = '\uFEFF' + rows.map(function(r) {
+      return r.map(function(c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(',');
+    }).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = '镜头数据-' + new Date().toISOString().slice(0, 10) + '.csv'; a.click();
+    URL.revokeObjectURL(url);
+    showToast('已导出 CSV（Excel 组件未就绪）', 'success');
+  }
+}
+
+// ===== Reset =====
+function confirmReset() { document.getElementById('reset-modal').classList.add('show'); }
+function closeModal() { document.getElementById('reset-modal').classList.remove('show'); }
+
+// ===== 会员 / 额度 控制 =====
+function canUseShotWrite() { return isMember || useCountShotWrite < FREE_LIMIT; }
+function canUseExcelImport() { return isMember || useCountExcelImport < FREE_LIMIT; }
+
+function renderMemberUI() {
+  const btn = document.getElementById('member-btn');
+  if (!btn) return;
+  if (isMember) {
+    btn.textContent = '👑 会员';
+    btn.className = 'btn btn-sm member-btn member-on';
+  } else {
+    btn.textContent = '👤 非会员 · 镜头 ' + useCountShotWrite + '/' + FREE_LIMIT + ' · Excel ' + useCountExcelImport + '/' + FREE_LIMIT;
+    btn.className = 'btn btn-sm member-btn member-off';
+  }
+}
+
+function setMember(v) {
+  isMember = !!v;
+  saveData();
+  renderMemberUI();
+  const m = document.getElementById('member-center-modal');
+  if (m && m.classList.contains('show')) {
+    const st = document.getElementById('member-status');
+    st.textContent = isMember ? '会员（无限使用）' : '非会员（免费额度）';
+    st.className = 'member-status ' + (isMember ? 'on' : 'off');
+    document.getElementById('member-usage').textContent = '免费额度：镜头编写 ' + useCountShotWrite + '/' + FREE_LIMIT + ' · Excel 导入 ' + useCountExcelImport + '/' + FREE_LIMIT;
+    const toggle = document.getElementById('member-toggle-btn');
+    toggle.textContent = isMember ? '取消会员（恢复免费额度）' : '开通会员（无限使用）';
+    toggle.className = 'btn ' + (isMember ? 'btn-outline' : 'btn-primary');
+  }
+  showToast(isMember ? '🎉 已开通会员，功能无限使用' : '已切换回非会员', 'success');
+}
+
+function openMemberCenter() {
+  setMember(isMember); // 刷新弹窗内容
+  document.getElementById('member-center-modal').classList.add('show');
+}
+function closeMemberCenter() { document.getElementById('member-center-modal').classList.remove('show'); }
+
+function showMemberLimitModal(feature) {
+  const limitText = feature === 'shot' ? ('「镜头编写」已用 ' + useCountShotWrite + '/' + FREE_LIMIT) : ('「Excel 导入」已用 ' + useCountExcelImport + '/' + FREE_LIMIT);
+  document.getElementById('limit-feature').textContent = limitText;
+  document.getElementById('limit-modal').classList.add('show');
+}
+function closeLimitModal() { document.getElementById('limit-modal').classList.remove('show'); }
+function limitGoMember() { closeLimitModal(); openMemberCenter(); }
+function resetAll() {
+  scriptText = ''; scriptSource = ''; excelData = null; shots = []; currentStage = 0; pendingFile = null; pendingWriteVideo = null;
+  globalEditTasks = { editCut: false, editColor: false, editSound: false };
+  summaryDone = {};
+  localStorage.removeItem('vp_script_text');
+  localStorage.removeItem('vp_script_source');
+  localStorage.removeItem('vp_excel');
+  localStorage.removeItem('vp_shots');
+  localStorage.removeItem('vp_edit_tasks');
+  localStorage.removeItem('vp_summary_done');
+  localStorage.removeItem('vp_stage');
+  // 清空 IndexedDB 中的视频
+  openVideoDB().then(function(db) {
+    const tx = db.transaction('videos', 'readwrite');
+    tx.objectStore('videos').clear();
+  }).catch(function(){});
+  writeOrder = 1;
+  const _wo = document.getElementById('write-order'); if (_wo) _wo.value = '1';
+  const _wd = document.getElementById('write-desc'); if (_wd) _wd.value = '';
+  const _wv = document.getElementById('write-voice'); if (_wv) _wv.value = '';
+  const _wdu = document.getElementById('write-duration'); if (_wdu) _wdu.value = '0';
+  clearWriteVideo();
+  closeModal(); renderStepper(); renderStage();
+  showToast('已重置全部数据', 'success');
+}
+
+// ===== Init =====
+loadData();
+renderMemberUI();
+initWriteOrder();
+renderStepper();
+renderStage();
+preloadLibraries();
+
+// ===== PWA Service Worker Registration =====
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('service-worker.js').then(function(reg) {
+      console.log('[PWA] Service Worker registered:', reg.scope);
+    }).catch(function(err) {
+      console.warn('[PWA] Service Worker registration failed:', err);
+    });
+  });
+}
+
+// ===== PWA Install Prompt =====
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', function(e) {
+  e.preventDefault();
+  deferredPrompt = e;
+  // Show install button
+  var btn = document.getElementById('pwa-install-btn');
+  if (btn) btn.style.display = 'inline-flex';
+});
+
+function pwaInstall() {
+  if (!deferredPrompt) {
+    showToast('请使用浏览器菜单中的"添加到主屏幕"或"安装应用"选项', 'success');
+    return;
+  }
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then(function() {
+    deferredPrompt = null;
+    var btn = document.getElementById('pwa-install-btn');
+    if (btn) btn.style.display = 'none';
+  });
+}
+
+// ===== 锁定界面为 100% 原始比例，禁止用户缩放 =====
+// 1) iOS Safari 自 iOS 10 起会忽略 viewport 的 user-scalable=no，
+//    因此还需通过手势事件拦截双指捏合与双击放大。
+(function lockPageScale() {
+  // 拦截 iOS 捏合缩放（gesturestart/change/end 由双指触发）
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function(ev) {
+    document.addEventListener(ev, function(e) { e.preventDefault(); }, { passive: false });
+  });
+  // 多指触控时不允许多指滑动（即禁用双指捏合缩放）
+  document.addEventListener('touchmove', function(e) {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+  // 拦截双击放大：仅当 300ms 内、同一位置连续点按（即双击缩放手势）才阻止，
+  // 不影响不同位置的正常快速点按（如连续勾选多个镜头）
+  var lastTouchEnd = 0, lastTouchX = 0, lastTouchY = 0;
+  document.addEventListener('touchend', function(e) {
+    var now = Date.now();
+    var t = e.changedTouches && e.changedTouches[0];
+    if (now - lastTouchEnd < 300 && t) {
+      var dx = Math.abs(t.clientX - lastTouchX), dy = Math.abs(t.clientY - lastTouchY);
+      if (dx < 30 && dy < 30) e.preventDefault(); // 同位置双击 → 阻止放大
+    }
+    lastTouchEnd = now;
+    if (t) { lastTouchX = t.clientX; lastTouchY = t.clientY; }
+  }, { passive: false });
+  // 桌面端双击缩放
+  document.addEventListener('dblclick', function(e) { e.preventDefault(); }, { passive: false });
+})();
+</script>
+</body>
+</html>
