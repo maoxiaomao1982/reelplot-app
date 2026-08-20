@@ -1166,7 +1166,7 @@ function doParseExcel(file) {
           outdoorDone: false,
           scene: ''
         };
-      }).filter(s => s.name || s.desc || s.order);
+      }).filter(s => s.desc && s.desc.trim()); // 镜头描述为空则不添加
 
       if (newShots.length === 0) {
         if (container) container.innerHTML = '';
@@ -1399,7 +1399,7 @@ function buildShotSummary(items, pct) {
   const kw = (summarySearchKeyword || '').toLowerCase(); // 镜头总表专用搜索：按镜头名称片段过滤
   const map = new Map(); // 镜头内容 -> 次数（保持首次出现顺序）
   items.forEach(function (it) {
-    if (!shotHasVoice(it.shot)) return; // 口播内容为空，当前序号不计入镜头总表
+    if (!shotHasDesc(it.shot)) return; // 镜头描述为空，当前序号不计入镜头总表
     const segs = (it.shot.desc || '').split('/');
     segs.forEach(function (seg) {
       const s = seg.trim();
@@ -1428,9 +1428,9 @@ function buildShotSummary(items, pct) {
   // 百分比按当前显示的（已按关键词过滤的）镜头片段加权计算，与表格行一致
   const pctVal = total > 0 ? Math.round((doneWeighted / total) * 100) : 0;
   // 空状态文案：区分「无镜头卡片 / 全部缺口播」与「关键词无命中」三种情况
-  const hasVoiceItems = items.some(function (it) { return shotHasVoice(it.shot); });
+  const hasVoiceItems = items.some(function (it) { return shotHasDesc(it.shot); });
   const noVoiceHint = (items.length > 0 && !hasVoiceItems)
-    ? '当前镜头均缺少「口播内容」，口播为空不计入镜头（填写口播内容后才会生成镜头）'
+    ? '当前镜头均缺少「镜头描述」，镜头描述为空不计入镜头（填写镜头描述后才会生成镜头）'
     : '暂无镜头描述（在镜头卡片的「镜头描述」中用「/」分隔多个镜头即可自动拆分统计）';
   const body = rows
     ? '<table class="shot-summary-table"><thead><tr><th class="col-no">序号</th><th>镜头</th><th class="col-count">次数</th><th class="col-done">完成</th></tr></thead><tbody>' + rows + '</tbody></table>'
@@ -1490,7 +1490,7 @@ function renderShootStage() {
   const kw = shootSearchKeyword.toLowerCase();
   const items = getShootItems();
 
-  // 镜头拆解进度按「可见镜头」（口播非空）计算，空缺播的镜头不计入完成度
+  // 镜头拆解进度按「可见镜头」（镜头描述非空）计算，镜头描述为空的镜头不计入完成度
   const totalUnits = items.length * 2;
   const doneUnits = items.reduce((a, it) => a + (it.shot.indoorDone ? 1 : 0) + (it.shot.outdoorDone ? 1 : 0), 0);
   updateProgress('shoot', totalUnits > 0 ? Math.round((doneUnits / totalUnits) * 100) : 0, doneUnits, totalUnits);
@@ -1501,8 +1501,8 @@ function renderShootStage() {
     if (shootSearchKeyword) {
       container.innerHTML = emptyStateHTML('🔍', '未找到匹配镜头', '没有镜头描述包含「' + escapeHtml(shootSearchKeyword) + '」，换个关键词试试');
     } else if (shots.length > 0) {
-      // 有镜头卡片但全部缺口播：统一提示「口播为空不生成镜头卡片」
-      container.innerHTML = emptyStateHTML('🎤', '暂无有效镜头', '当前镜头均缺少「口播内容」，口播为空不生成镜头卡片、也不计入镜头总表（填写口播内容后即可显示）');
+      // 有镜头卡片但全部缺镜头描述：统一提示「镜头描述为空不生成镜头卡片」
+      container.innerHTML = emptyStateHTML('🎥', '暂无有效镜头', '当前镜头均缺少「镜头描述」，镜头描述为空不生成镜头卡片、也不计入镜头总表（填写镜头描述后即可显示）');
     } else {
       container.innerHTML = emptyStateHTML('🎥', '暂无镜头', '请先在脚本阶段通过 Excel 表格 或 镜头编写 添加镜头');
     }
@@ -1614,18 +1614,18 @@ function renderShootStage() {
   container.style.display = showBreak ? '' : 'none';
 }
 
-// 镜头总表仅统计「口播内容」非空的镜头卡片（口播为空则不计入镜头）
-function shotHasVoice(shot) {
-  return !!(shot.note && shot.note.trim());
+// 镜头总表仅统计「镜头描述」非空的镜头卡片（镜头描述为空则不计入镜头）
+function shotHasDesc(shot) {
+  return !!(shot.desc && shot.desc.trim());
 }
 
 // 拍摄阶段：按镜头描述关键词过滤，返回 [{shot, idx}]（保留原始下标）
-// 口播内容为空的不生成镜头卡片，也不计入镜头总表（统一在此过滤，卡片列表与总表共用）
+// 镜头描述为空的不生成镜头卡片，也不计入镜头总表（统一在此过滤，卡片列表与总表共用）
 function getShootItems() {
   const kw = shootSearchKeyword.toLowerCase();
   const items = [];
   shots.forEach(function (shot, i) {
-    if (!shotHasVoice(shot)) return; // 口播为空：不生成镜头卡片，也不计入镜头总表
+    if (!shotHasDesc(shot)) return; // 镜头描述为空：不生成镜头卡片，也不计入镜头总表
     if (kw && (shot.desc || '').toLowerCase().indexOf(kw) === -1) return;
     items.push({ shot: shot, idx: i });
   });
@@ -1637,7 +1637,7 @@ function computeSummaryPct(items) {
   let total = 0, doneWeighted = 0;
   const map = new Map();
   items.forEach(function (it) {
-    if (!shotHasVoice(it.shot)) return; // 口播内容为空，当前序号不计入镜头总表
+    if (!shotHasDesc(it.shot)) return; // 镜头描述为空，当前序号不计入镜头总表
     (it.shot.desc || '').split('/').forEach(function (seg) {
       const s = seg.trim(); if (!s) return;
       map.set(s, (map.get(s) || 0) + 1);
