@@ -861,6 +861,7 @@ function saveData() {
   localStorage.setItem('vp_is_member', isMember ? '1' : '0');
   localStorage.setItem('vp_use_shot', String(useCountShotWrite));
   localStorage.setItem('vp_use_excel', String(useCountExcelImport));
+  localStorage.setItem('vp_shoot_view_mode', shootViewMode === 'summary' ? 'summary' : 'breakdown');
 }
 function loadData() {
   try {
@@ -904,6 +905,7 @@ function loadData() {
     isMember = true; // 公网版永久解锁会员
     const us = localStorage.getItem('vp_use_shot'); if (us != null) useCountShotWrite = parseInt(us) || 0;
     const ue = localStorage.getItem('vp_use_excel'); if (ue != null) useCountExcelImport = parseInt(ue) || 0;
+    const vm = localStorage.getItem('vp_shoot_view_mode'); if (vm === 'summary') shootViewMode = 'summary'; else shootViewMode = 'breakdown';
   } catch(e) { scriptText = ''; shots = []; currentStage = 0; scriptSource = ''; excelData = null; globalEditTasks = { editCut: false, editColor: false, editSound: false }; summaryDone = {}; isMember = true; useCountShotWrite = 0; useCountExcelImport = 0; }
 }
 
@@ -1699,7 +1701,27 @@ function renderShotSummary() {
 // 拍摄标签页视图过滤：只显示镜头拆解 / 只显示镜头总表
 // 两个都不勾 → 都显示；单独勾选其一 → 隐藏另一种，只显示当前勾选内容
 function onToggleView(which, checked) {
+  // 同步视图模式：仅勾选「只显示镜头总表」→ 'summary'；其余（都不勾/都勾/只勾拆解）→ 'breakdown'
+  const bChk = document.getElementById('view-breakdown-chk');
+  const sChk = document.getElementById('view-summary-chk');
+  const sOnly = !!(sChk && sChk.checked && bChk && !bChk.checked);
+  shootViewMode = sOnly ? 'summary' : 'breakdown';
+  saveData();
   renderShootStage();
+}
+
+// 读取当前视图模式对应的「拍摄完成」判定/统计（拆解=按镜头卡片室内+室外，与拆解进度条口径一致；总表=按总表勾选加权）
+function getShootDoneStats() {
+  const items = getShootItems();
+  if (shootViewMode === 'summary') {
+    const sp = computeSummaryPct(items);
+    return { mode: 'summary', done: sp.doneWeighted, total: sp.total, pct: sp.pct, complete: sp.total > 0 && sp.doneWeighted === sp.total };
+  }
+  const total = items.length;
+  const totalUnits = total * 2;
+  const doneUnits = items.reduce((a, it) => a + (it.shot.indoorDone ? 1 : 0) + (it.shot.outdoorDone ? 1 : 0), 0);
+  const finished = items.filter(function (it) { return it.shot.indoorDone && it.shot.outdoorDone; }).length;
+  return { mode: 'breakdown', done: finished, total: total, pct: totalUnits > 0 ? Math.round((doneUnits / totalUnits) * 100) : 0, complete: totalUnits > 0 && doneUnits === totalUnits };
 }
 
 // 未完成镜头筛选：与「只显示镜头拆解/总表」组合使用
@@ -1778,6 +1800,7 @@ let groupByScene = false;
 let shootSearchKeyword = '';   // 拍摄阶段搜索关键词（按镜头描述过滤卡片）
 let summarySearchKeyword = ''; // 镜头总表专用搜索关键词（按镜头名称片段过滤总表）
 let showOnlyUndone = false;    // 是否只显示未完成镜头
+let shootViewMode = 'breakdown'; // 拍摄阶段视图模式：'breakdown'=镜头拆解 / 'summary'=镜头总表（决定完成页统计口径与自动跳转判定）
 const selectedShots = new Set();
 const collapsedGroups = new Set();
 let dragSrcIdx = null;
@@ -1970,19 +1993,19 @@ function toggleEditTask(key) {
 // ===== Stage 4: Complete =====
 function renderCompleteStage() {
   const total = shots.length;
-  const shootFinished = shots.filter(s => s.indoorDone && s.outdoorDone).length;
   const indoorDone = shots.filter(s => s.indoorDone).length;
   const outdoorDone = shots.filter(s => s.outdoorDone).length;
-  const doneUnits = indoorDone + outdoorDone;
-  const totalUnits = total * 2;
   const editChecksDone = (globalEditTasks.editCut?1:0) + (globalEditTasks.editColor?1:0) + (globalEditTasks.editSound?1:0);
-  const allDone = shootFinished === total && editChecksDone === 3 && total > 0;
-  const shootPct = totalUnits > 0 ? Math.round((doneUnits / totalUnits) * 100) : 0;
+  // 「镜头拍完」跟随拍摄阶段视图模式：总表模式按总表（已完成次数/总次数·加权百分比），拆解模式按拆解（完成镜头数/总镜头数·室内外单元百分比）
+  const shootStats = getShootDoneStats();
+  const shootDoneNum = shootStats.done + '/' + shootStats.total;
+  const shootDoneLabel = shootStats.mode === 'summary' ? '镜头拍完·总表 (' + shootStats.pct + '%)' : '镜头拍完 (' + shootStats.pct + '%)';
+  const allDone = shootStats.complete && editChecksDone === 3 && total > 0;
   const editPct = Math.round((editChecksDone / 3) * 100);
 
   document.getElementById('summary-grid').innerHTML = `
     <div class="summary-card"><div class="num">${total}</div><div class="label">总镜头数</div></div>
-    <div class="summary-card green"><div class="num">${shootFinished}/${total}</div><div class="label">镜头拍完 (${shootPct}%)</div></div>
+    <div class="summary-card green"><div class="num">${shootDoneNum}</div><div class="label">${shootDoneLabel}</div></div>
     <div class="summary-card green"><div class="num">${editChecksDone}/3</div><div class="label">剪辑完成 (${editPct}%)</div></div>
     <div class="summary-card ${allDone ? 'green' : 'orange'}"><div class="num">${allDone ? '✓' : '⏳'}</div><div class="label">${allDone ? '全部完成' : '进行中'}</div></div>`;
 
@@ -2027,8 +2050,9 @@ function updateField(idx, field, value) {
   }
 }
 function checkAllComplete() {
-  const total = shots.length;
-  const shootComplete = total > 0 && shots.every(s => s.indoorDone && s.outdoorDone);
+  // 拍摄完成判定跟随拍摄阶段视图模式：总表模式按总表勾选（加权 100%），拆解模式按镜头卡片室内+室外
+  const shootStats = getShootDoneStats();
+  const shootComplete = shootStats.complete;
   const editDone = globalEditTasks.editCut && globalEditTasks.editColor && globalEditTasks.editSound;
   if (shootComplete && editDone) {
     setTimeout(() => {
