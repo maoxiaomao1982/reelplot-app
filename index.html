@@ -562,13 +562,6 @@ function preloadLibraries() {
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 200; }
   .modal-overlay.show { display: flex; }
   .modal { background: var(--surface); border-radius: var(--radius); padding: 24px; max-width: 500px; width: 90%; box-shadow: var(--shadow-lg); }
-  .member-btn { white-space: nowrap; }
-  .member-btn.member-off { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
-  .member-btn.member-off:hover { background: #e2e8f0; }
-  .member-btn.member-on { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; border: 1px solid #d97706; }
-  .member-status { font-weight: 600; padding: 2px 10px; border-radius: 999px; font-size: 13px; }
-  .member-status.on { background: #fef3c7; color: #b45309; }
-  .member-status.off { background: #f1f5f9; color: #64748b; }
   .modal h3 { margin-bottom: 16px; }
   .modal-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; }
 
@@ -580,8 +573,7 @@ function preloadLibraries() {
     .header-actions .btn { width: 100%; justify-content: center; padding: 6px 8px; font-size: 12px; white-space: nowrap; }
     #btn-download-script { grid-column: 1; grid-row: 1; }
     #btn-export-data { grid-column: 2; grid-row: 1; }
-    .header-actions .member-btn { grid-column: 1; grid-row: 2; }
-    #btn-reset-all { grid-column: 2; grid-row: 2; }
+    #btn-reset-all { grid-column: 1 / -1; grid-row: 2; }
     .stepper-container { padding: 16px 8px; }
     .step-label { font-size: 12px; }
     .shot-card-body { flex-direction: column; }
@@ -607,7 +599,6 @@ function preloadLibraries() {
   </div>
   <div class="header-actions">
     <button class="btn btn-primary btn-sm" id="pwa-install-btn" style="display:none" onclick="pwaInstall()">📲 安装到桌面</button>
-    <button class="btn btn-sm member-btn member-off" id="member-btn" onclick="openMemberCenter()">👤 非会员</button>
     <button class="btn btn-outline btn-sm" id="btn-download-script" onclick="downloadScriptTemplate()"><svg viewBox="0 0 16 16" width="15" height="15" style="vertical-align:-2px" aria-hidden="true"><path d="M8 2v7.5" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.8 6.8L8 10l3.2-3.2" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 11v1.5a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5V11" fill="none" stroke="#b8a59d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> 下载脚本空表</button>
     <button class="btn btn-outline btn-sm" id="btn-export-data" onclick="exportData()"><svg viewBox="0 0 16 16" width="15" height="15" style="vertical-align:-2px" aria-hidden="true"><path d="M8 9.5V2" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.8 5.2L8 2l3.2 3.2" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 11v1.5a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5V11" fill="none" stroke="#b8a59d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> 导出数据</button>
     <button class="btn btn-danger btn-sm" id="btn-reset-all" onclick="confirmReset()">🗑️ 重置全部</button>
@@ -774,32 +765,6 @@ function preloadLibraries() {
   </div>
 </div>
 
-<!-- Member Center Modal -->
-<div class="modal-overlay" id="member-center-modal">
-  <div class="modal">
-    <h3>👤 会员中心</h3>
-    <p>当前状态：<span id="member-status" class="member-status off">非会员（免费额度）</span></p>
-    <p id="member-usage" style="color:var(--text-light);">免费额度：镜头编写 0/3 · Excel 导入 0/3</p>
-    <p style="color:var(--text-light);font-size:13px;line-height:1.6;">非会员：「镜头编写」与「Excel 导入」各可使用 3 次；开通会员后全部功能无限使用。</p>
-    <div class="modal-actions">
-      <button class="btn btn-outline" onclick="closeMemberCenter()">关闭</button>
-      <button class="btn btn-primary" id="member-toggle-btn" onclick="setMember(!isMember)">开通会员（无限使用）</button>
-    </div>
-  </div>
-</div>
-
-<!-- Member Limit Modal -->
-<div class="modal-overlay" id="limit-modal">
-  <div class="modal">
-    <h3>🔒 已达免费额度</h3>
-    <p style="color:var(--text-light);">您的 <span id="limit-feature"></span> 次免费额度已用完。开通会员后即可无限使用全部功能。</p>
-    <div class="modal-actions">
-      <button class="btn btn-outline" onclick="closeLimitModal()">稍后再说</button>
-      <button class="btn btn-primary" onclick="limitGoMember()">开通会员</button>
-    </div>
-  </div>
-</div>
-
 <div class="toast" id="toast"></div>
 
 <script>
@@ -843,12 +808,6 @@ let autoJumpGuard = false;     // 防止「完成即跳转剪辑页」在同一 
 let pendingAction = null;      // 待执行的操作（用于替换确认后执行）
 let pendingWriteVideo = null;  // 镜头编写面板待添加的参考视频文件
 
-// ===== 会员 / 使用额度 =====
-let isMember = true;            // 公网版永久解锁会员
-let useCountShotWrite = 0;       // 「镜头编写」使用次数（非会员上限 FREE_LIMIT）
-let useCountExcelImport = 0;     // 「Excel 导入」使用次数（非会员上限 FREE_LIMIT）
-const FREE_LIMIT = 3;            // 非会员免费额度
-
 // ===== Persistence =====
 function saveData() {
   localStorage.setItem('vp_script_text', scriptText);
@@ -858,9 +817,6 @@ function saveData() {
   localStorage.setItem('vp_edit_tasks', JSON.stringify(globalEditTasks));
   localStorage.setItem('vp_summary_done', JSON.stringify(summaryDone));
   localStorage.setItem('vp_stage', String(currentStage));
-  localStorage.setItem('vp_is_member', isMember ? '1' : '0');
-  localStorage.setItem('vp_use_shot', String(useCountShotWrite));
-  localStorage.setItem('vp_use_excel', String(useCountExcelImport));
   localStorage.setItem('vp_shoot_view_mode', shootViewMode === 'summary' ? 'summary' : 'breakdown');
 }
 function loadData() {
@@ -901,12 +857,8 @@ function loadData() {
     if (st) currentStage = parseInt(st);
     const sd = localStorage.getItem('vp_summary_done');
     if (sd) { try { summaryDone = JSON.parse(sd) || {}; } catch(e) { summaryDone = {}; } }
-    // 会员 / 额度
-    isMember = true; // 公网版永久解锁会员
-    const us = localStorage.getItem('vp_use_shot'); if (us != null) useCountShotWrite = parseInt(us) || 0;
-    const ue = localStorage.getItem('vp_use_excel'); if (ue != null) useCountExcelImport = parseInt(ue) || 0;
     const vm = localStorage.getItem('vp_shoot_view_mode'); if (vm === 'summary') shootViewMode = 'summary'; else shootViewMode = 'breakdown';
-  } catch(e) { scriptText = ''; shots = []; currentStage = 0; scriptSource = ''; excelData = null; globalEditTasks = { editCut: false, editColor: false, editSound: false }; summaryDone = {}; isMember = true; useCountShotWrite = 0; useCountExcelImport = 0; }
+  } catch(e) { scriptText = ''; shots = []; currentStage = 0; scriptSource = ''; excelData = null; globalEditTasks = { editCut: false, editColor: false, editSound: false }; summaryDone = {}; }
 }
 
 // ===== Stepper =====
@@ -1019,7 +971,6 @@ function clearWriteVideo() {
 }
 
 function addWriteShotToShoot() {
-  if (!canUseShotWrite()) { showMemberLimitModal('shot'); return; }
   const desc = document.getElementById('write-desc').value.trim();
   const voice = document.getElementById('write-voice').value.trim();
   const dur = document.getElementById('write-duration').value || '0';
@@ -1044,8 +995,6 @@ function addWriteShotToShoot() {
     videoName: pendingWriteVideo ? pendingWriteVideo.name : ''
   };
   shots.push(shot);
-  useCountShotWrite++;
-  renderMemberUI();
   shots.sort((a, b) => a.order - b.order);
   scriptSource = 'manual';
   // 保存参考视频到 IndexedDB
@@ -1112,7 +1061,6 @@ let pendingFile = null;
 
 function doParseExcel(file) {
   if (!file) return;
-  if (!canUseExcelImport()) { showMemberLimitModal('excel'); return; }
   closeReplaceModal();
 
   var container = document.getElementById('excel-info-container');
@@ -1185,8 +1133,6 @@ function doParseExcel(file) {
       newShots.sort((a, b) => a.order - b.order);
 
       shots = newShots;
-      useCountExcelImport++;
-      renderMemberUI();
       scriptSource = 'excel';
       summaryDone = {}; // 重新导入/替换镜头时，镜头总表的「完成」勾选一并清空重置
 
@@ -2220,52 +2166,6 @@ function exportData() {
 function confirmReset() { document.getElementById('reset-modal').classList.add('show'); }
 function closeModal() { document.getElementById('reset-modal').classList.remove('show'); }
 
-// ===== 会员 / 额度 控制 =====
-function canUseShotWrite() { return isMember || useCountShotWrite < FREE_LIMIT; }
-function canUseExcelImport() { return isMember || useCountExcelImport < FREE_LIMIT; }
-
-function renderMemberUI() {
-  const btn = document.getElementById('member-btn');
-  if (!btn) return;
-  if (isMember) {
-    btn.textContent = '👑 会员';
-    btn.className = 'btn btn-sm member-btn member-on';
-  } else {
-    btn.textContent = '👤 非会员 · 镜头 ' + useCountShotWrite + '/' + FREE_LIMIT + ' · Excel ' + useCountExcelImport + '/' + FREE_LIMIT;
-    btn.className = 'btn btn-sm member-btn member-off';
-  }
-}
-
-function setMember(v) {
-  isMember = !!v;
-  saveData();
-  renderMemberUI();
-  const m = document.getElementById('member-center-modal');
-  if (m && m.classList.contains('show')) {
-    const st = document.getElementById('member-status');
-    st.textContent = isMember ? '会员（无限使用）' : '非会员（免费额度）';
-    st.className = 'member-status ' + (isMember ? 'on' : 'off');
-    document.getElementById('member-usage').textContent = '免费额度：镜头编写 ' + useCountShotWrite + '/' + FREE_LIMIT + ' · Excel 导入 ' + useCountExcelImport + '/' + FREE_LIMIT;
-    const toggle = document.getElementById('member-toggle-btn');
-    toggle.textContent = isMember ? '取消会员（恢复免费额度）' : '开通会员（无限使用）';
-    toggle.className = 'btn ' + (isMember ? 'btn-outline' : 'btn-primary');
-  }
-  showToast(isMember ? '🎉 已开通会员，功能无限使用' : '已切换回非会员', 'success');
-}
-
-function openMemberCenter() {
-  setMember(isMember); // 刷新弹窗内容
-  document.getElementById('member-center-modal').classList.add('show');
-}
-function closeMemberCenter() { document.getElementById('member-center-modal').classList.remove('show'); }
-
-function showMemberLimitModal(feature) {
-  const limitText = feature === 'shot' ? ('「镜头编写」已用 ' + useCountShotWrite + '/' + FREE_LIMIT) : ('「Excel 导入」已用 ' + useCountExcelImport + '/' + FREE_LIMIT);
-  document.getElementById('limit-feature').textContent = limitText;
-  document.getElementById('limit-modal').classList.add('show');
-}
-function closeLimitModal() { document.getElementById('limit-modal').classList.remove('show'); }
-function limitGoMember() { closeLimitModal(); openMemberCenter(); }
 function resetAll() {
   scriptText = ''; scriptSource = ''; excelData = null; shots = []; currentStage = 0; pendingFile = null; pendingWriteVideo = null;
   globalEditTasks = { editCut: false, editColor: false, editSound: false };
@@ -2294,7 +2194,6 @@ function resetAll() {
 
 // ===== Init =====
 loadData();
-renderMemberUI();
 initWriteOrder();
 renderStepper();
 renderStage();
