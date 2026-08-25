@@ -781,7 +781,7 @@ function preloadLibraries() {
     <h3>⚙️ 设置</h3>
     <div class="settings-list">
       <button class="settings-item" id="settings-member-item" onclick="closeSettings(); openMemberCenter();">
-        <span class="settings-item-main" id="settings-member-main">👑 会员中心</span>
+        <span class="settings-item-main" id="settings-member-main">👑 开启Reelplot会员</span>
         <span class="settings-item-note" id="settings-member-note">非会员（试用中）<span class="settings-arrow">›</span></span>
       </button>
       <button class="settings-item" onclick="closeSettings(); downloadScriptTemplate();">
@@ -813,7 +813,7 @@ function preloadLibraries() {
 <!-- Member Center Modal -->
 <div class="modal-overlay" id="member-center-modal">
   <div class="modal" style="max-width:360px;">
-    <h3>👑 会员中心</h3>
+    <h3>👑 开启Reelplot会员</h3>
     <p style="text-align:left;">当前状态：<span id="member-status" class="member-status off">非会员（试用中）</span></p>
     <p id="member-usage" style="text-align:left;color:var(--text-light);font-size:13px;">试用额度：镜头编写 0/3 · Excel 导入 0/3</p>
 
@@ -2382,7 +2382,7 @@ function openSettings() {
 function closeSettings() { document.getElementById('settings-modal').classList.remove('show'); }
 
 function renderMemberUI() {
-  // 更新设置页「会员中心」条目：已购用户不显示会员中心入口，只显示当前状态「永久会员」
+  // 更新设置页「开启Reelplot会员」条目：已购用户不显示会员入口，只显示「恭喜你，成为Reelplot永久会员」
   const item = document.getElementById('settings-member-item');
   const main = document.getElementById('settings-member-main');
   const note = document.getElementById('settings-member-note');
@@ -2395,7 +2395,7 @@ function renderMemberUI() {
   } else {
     item.onclick = function () { closeSettings(); openMemberCenter(); };
     item.style.cursor = '';
-    main.textContent = '👑 会员中心';
+    main.textContent = '👑 开启Reelplot会员';
     note.innerHTML = '非会员（试用中）<span class="settings-arrow">›</span>';
   }
 }
@@ -2430,7 +2430,7 @@ function setMember(v) {
   isMember = !!v;
   saveData();
   renderMemberUI();
-  // 若会员中心正打开，同步刷新展示
+  // 若会员弹窗正打开，同步刷新展示
   const m = document.getElementById('member-center-modal');
   if (m && m.classList.contains('show')) openMemberCenter();
 }
