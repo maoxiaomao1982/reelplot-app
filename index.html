@@ -776,8 +776,8 @@ function preloadLibraries() {
   <div class="modal" style="max-width:360px;">
     <h3>⚙️ 设置</h3>
     <div class="settings-list">
-      <button class="settings-item" onclick="closeSettings(); openMemberCenter();">
-        <span class="settings-item-main">👑 会员中心</span>
+      <button class="settings-item" id="settings-member-item" onclick="closeSettings(); openMemberCenter();">
+        <span class="settings-item-main" id="settings-member-main">👑 会员中心</span>
         <span class="settings-item-note" id="settings-member-note">非会员（试用中）<span class="settings-arrow">›</span></span>
       </button>
     </div>
@@ -2322,12 +2322,20 @@ function openSettings() {
 function closeSettings() { document.getElementById('settings-modal').classList.remove('show'); }
 
 function renderMemberUI() {
-  // 更新设置页「会员中心」条目右侧的当前状态
+  // 更新设置页「会员中心」条目：已购用户不显示会员中心入口，只显示当前状态「永久会员」
+  const item = document.getElementById('settings-member-item');
+  const main = document.getElementById('settings-member-main');
   const note = document.getElementById('settings-member-note');
-  if (!note) return;
+  if (!item || !main || !note) return;
   if (isMember) {
+    item.onclick = null;
+    item.style.cursor = 'default';
+    main.textContent = '👑 会员';
     note.innerHTML = '<span class="settings-item-note on" style="font-weight:600;">永久会员</span>';
   } else {
+    item.onclick = function () { closeSettings(); openMemberCenter(); };
+    item.style.cursor = '';
+    main.textContent = '👑 会员中心';
     note.innerHTML = '非会员（试用中）<span class="settings-arrow">›</span>';
   }
 }
