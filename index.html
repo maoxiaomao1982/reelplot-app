@@ -627,10 +627,6 @@ function preloadLibraries() {
   </div>
   <div class="header-actions">
     <button class="btn btn-primary btn-sm" id="pwa-install-btn" style="display:none" onclick="pwaInstall()">📲 安装到桌面</button>
-    <button class="btn btn-outline btn-sm" id="btn-download-script" onclick="downloadScriptTemplate()"><svg viewBox="0 0 16 16" width="15" height="15" style="vertical-align:-2px" aria-hidden="true"><path d="M8 2v7.5" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.8 6.8L8 10l3.2-3.2" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 11v1.5a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5V11" fill="none" stroke="#b8a59d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> 下载脚本空表</button>
-    <button class="btn btn-outline btn-sm" id="btn-export-data" onclick="exportData()"><svg viewBox="0 0 16 16" width="15" height="15" style="vertical-align:-2px" aria-hidden="true"><path d="M8 9.5V2" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.8 5.2L8 2l3.2 3.2" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 11v1.5a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5V11" fill="none" stroke="#b8a59d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> 导出数据</button>
-    <button class="btn btn-danger btn-sm" id="btn-reset-all" onclick="confirmReset()">🗑️ 重置全部</button>
-    <span id="lib-status-badge" class="lib-badge loading">⏳ 加载解析库...</span>
   </div>
 </div>
 
@@ -689,6 +685,7 @@ function preloadLibraries() {
 
     <!-- Excel Upload Panel -->
     <div class="input-panel" id="panel-excel">
+      <div style="padding: 0 0 10px;"><span id="lib-status-badge" class="lib-badge loading">⏳ 加载解析库...</span></div>
       <div class="excel-upload-card">
         <div class="excel-drop-zone" id="excel-drop-zone" onclick="document.getElementById('excel-file-input').click()">
           <div class="icon"><svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="#b8a59d" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M24 34V12M15 21l9-9 9 9"/><path d="M10 34v4a4 4 0 0 0 4 4h20a4 4 0 0 0 4-4v-4"/></svg></div>
@@ -779,6 +776,18 @@ function preloadLibraries() {
       <button class="settings-item" id="settings-member-item" onclick="closeSettings(); openMemberCenter();">
         <span class="settings-item-main" id="settings-member-main">👑 会员中心</span>
         <span class="settings-item-note" id="settings-member-note">非会员（试用中）<span class="settings-arrow">›</span></span>
+      </button>
+      <button class="settings-item" onclick="closeSettings(); downloadScriptTemplate();">
+        <span class="settings-item-main">📥 下载脚本空表</span>
+        <span class="settings-item-note">获取 Excel 模板<span class="settings-arrow">›</span></span>
+      </button>
+      <button class="settings-item" onclick="closeSettings(); exportData();">
+        <span class="settings-item-main">📤 导出数据</span>
+        <span class="settings-item-note">备份全部内容<span class="settings-arrow">›</span></span>
+      </button>
+      <button class="settings-item" onclick="closeSettings(); confirmReset();">
+        <span class="settings-item-main" style="color:#b91c1c;">🗑️ 重置全部</span>
+        <span class="settings-item-note">清空所有数据<span class="settings-arrow">›</span></span>
       </button>
     </div>
     <div class="modal-actions">
