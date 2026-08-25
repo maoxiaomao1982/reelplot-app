@@ -578,6 +578,13 @@ function preloadLibraries() {
   .settings-item-main { display: flex; align-items: center; gap: 8px; font-weight: 600; }
   .settings-item-note { font-size: 12px; color: var(--text-light); font-weight: 500; display: flex; align-items: center; gap: 6px; }
   .settings-item-note.on { color: #b45309; }
+  /* 完成音效开关（iOS 风格） */
+  .switch { position: relative; display: inline-block; width: 46px; height: 28px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .slider { position: absolute; cursor: pointer; inset: 0; background: #cbd5e1; border-radius: 28px; transition: background 0.25s; }
+  .switch .slider::before { content: ''; position: absolute; width: 24px; height: 24px; left: 2px; top: 2px; background: #fff; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.25); transition: transform 0.25s; }
+  .switch input:checked + .slider { background: #34c759; }
+  .switch input:checked + .slider::before { transform: translateX(18px); }
   .settings-arrow { color: var(--text-light); font-size: 14px; }
   .member-status { font-weight: 600; padding: 2px 10px; border-radius: 999px; font-size: 13px; }
   .member-status.on { background: #fef3c7; color: #b45309; }
@@ -785,6 +792,13 @@ function preloadLibraries() {
         <span class="settings-item-main">📤 导出数据</span>
         <span class="settings-item-note">备份全部内容<span class="settings-arrow">›</span></span>
       </button>
+      <div class="settings-item" style="cursor:default;">
+        <span class="settings-item-main">🔔 完成音效</span>
+        <label class="switch" style="margin-right:2px;">
+          <input type="checkbox" id="sound-switch" onchange="setSoundEnabled(this.checked)">
+          <span class="slider"></span>
+        </label>
+      </div>
       <button class="settings-item" onclick="closeSettings(); confirmReset();">
         <span class="settings-item-main" style="color:#b91c1c;">🗑️ 重置全部</span>
         <span class="settings-item-note">清空所有数据<span class="settings-arrow">›</span></span>
@@ -1137,6 +1151,7 @@ function addWriteShotToShoot() {
 
   renderScriptStage();
   showToast('✓ 已添加镜头 ' + shot.order + ' 到拍摄', 'success');
+  playDoneSound();
   goToStage(1);
 }
 
@@ -1274,6 +1289,7 @@ function doParseExcel(file) {
       saveData();
       renderScriptStage();
       showToast(`✓ 从 Excel 中提取了 ${newShots.length} 个镜头`, 'success');
+      playDoneSound();
       goToStage(1);
     } catch(err) {
       console.error('Excel parse error:', err);
@@ -2195,6 +2211,40 @@ function emptyStateHTML(icon, title, desc) { return `<div class="empty-state"><d
 function escapeHtml(str) { if (!str) return ''; const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
 function showToast(msg, type) { const t = document.getElementById('toast'); t.textContent = msg; t.className = 'toast show ' + (type || ''); setTimeout(() => t.className = 'toast', 2500); }
 
+// ===== 完成音效（Web Audio 合成，无外部资源） =====
+let soundEnabled = localStorage.getItem('vp_sound_enabled') !== '0';
+function playDoneSound() {
+  if (!soundEnabled) return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    const notes = [523.25, 659.25, 783.99]; // C5 E5 G5 上行琶音
+    notes.forEach(function(freq, i) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const t0 = ctx.currentTime + i * 0.09;
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(0.12, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(t0); osc.stop(t0 + 0.55);
+    });
+    setTimeout(function() { ctx.close().catch(function(){}); }, 1200);
+  } catch(e) {}
+}
+function setSoundEnabled(on) {
+  soundEnabled = on;
+  localStorage.setItem('vp_sound_enabled', on ? '1' : '0');
+  if (on) playDoneSound();
+}
+document.addEventListener('DOMContentLoaded', function() {
+  const sw = document.getElementById('sound-switch');
+  if (sw) sw.checked = soundEnabled;
+});
+
 // ===== Replace Modal Handler =====
 document.addEventListener('DOMContentLoaded', function() {
   const confirmBtn = document.getElementById('replace-confirm-btn');
@@ -2285,6 +2335,7 @@ function exportData() {
     URL.revokeObjectURL(url);
     showToast('已导出 CSV（Excel 组件未就绪）', 'success');
   }
+  playDoneSound();
 }
 
 // ===== Reset =====
