@@ -567,6 +567,18 @@ function preloadLibraries() {
   .member-btn.member-off { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
   .member-btn.member-off:hover { background: #e2e8f0; }
   .member-btn.member-on { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; border: 1px solid #d97706; }
+
+  /* ===== 设置 ===== */
+  .settings-btn { background: var(--surface); border: 1px solid rgba(0,0,0,0.08); border-radius: 999px; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; padding: 0; }
+  .settings-btn:hover { background: var(--primary-bg); }
+  .settings-btn:active { transform: rotate(45deg); }
+  .settings-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+  .settings-item { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 13px 14px; background: var(--bg-secondary); border: 1px solid rgba(0,0,0,0.05); border-radius: 12px; font-size: 14px; color: var(--text); cursor: pointer; transition: all 0.2s; text-align: left; font-family: inherit; }
+  .settings-item:hover { background: var(--primary-bg); }
+  .settings-item-main { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .settings-item-note { font-size: 12px; color: var(--text-light); font-weight: 500; display: flex; align-items: center; gap: 6px; }
+  .settings-item-note.on { color: #b45309; }
+  .settings-arrow { color: var(--text-light); font-size: 14px; }
   .member-status { font-weight: 600; padding: 2px 10px; border-radius: 999px; font-size: 13px; }
   .member-status.on { background: #fef3c7; color: #b45309; }
   .member-status.off { background: #f1f5f9; color: #64748b; }
@@ -611,14 +623,14 @@ function preloadLibraries() {
 <div class="header">
   <div class="header-title-row">
     <h1>🎬 Reelplot</h1>
-    <span id="lib-status-badge" class="lib-badge loading">⏳ 加载解析库...</span>
+    <button class="settings-btn" id="settings-btn" onclick="openSettings()" aria-label="设置" title="设置"><svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="#8b7a66" stroke-width="2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" fill="none" stroke="#8b7a66" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div>
   <div class="header-actions">
-    <button class="btn btn-sm member-btn member-off" id="member-btn" onclick="openMemberCenter()">👤 非会员</button>
     <button class="btn btn-primary btn-sm" id="pwa-install-btn" style="display:none" onclick="pwaInstall()">📲 安装到桌面</button>
     <button class="btn btn-outline btn-sm" id="btn-download-script" onclick="downloadScriptTemplate()"><svg viewBox="0 0 16 16" width="15" height="15" style="vertical-align:-2px" aria-hidden="true"><path d="M8 2v7.5" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.8 6.8L8 10l3.2-3.2" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 11v1.5a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5V11" fill="none" stroke="#b8a59d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> 下载脚本空表</button>
     <button class="btn btn-outline btn-sm" id="btn-export-data" onclick="exportData()"><svg viewBox="0 0 16 16" width="15" height="15" style="vertical-align:-2px" aria-hidden="true"><path d="M8 9.5V2" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.8 5.2L8 2l3.2 3.2" fill="none" stroke="#b8a59d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 11v1.5a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5V11" fill="none" stroke="#b8a59d" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> 导出数据</button>
     <button class="btn btn-danger btn-sm" id="btn-reset-all" onclick="confirmReset()">🗑️ 重置全部</button>
+    <span id="lib-status-badge" class="lib-badge loading">⏳ 加载解析库...</span>
   </div>
 </div>
 
@@ -755,6 +767,22 @@ function preloadLibraries() {
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeModal()">取消</button>
       <button class="btn btn-danger" onclick="resetAll()">确认重置</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal" style="max-width:360px;">
+    <h3>⚙️ 设置</h3>
+    <div class="settings-list">
+      <button class="settings-item" onclick="closeSettings(); openMemberCenter();">
+        <span class="settings-item-main">👑 会员中心</span>
+        <span class="settings-item-note" id="settings-member-note">非会员（试用中）<span class="settings-arrow">›</span></span>
+      </button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeSettings()">关闭</button>
     </div>
   </div>
 </div>
@@ -2284,15 +2312,23 @@ function resetAll() {
 function canUseShotWrite() { return isMember || useCountShotWrite < FREE_LIMIT; }
 function canUseExcelImport() { return isMember || useCountExcelImport < FREE_LIMIT; }
 
+// ===== 设置页 =====
+function openSettings() {
+  const m = document.getElementById('settings-modal');
+  if (!m) return;
+  renderMemberUI();
+  m.classList.add('show');
+}
+function closeSettings() { document.getElementById('settings-modal').classList.remove('show'); }
+
 function renderMemberUI() {
-  const btn = document.getElementById('member-btn');
-  if (!btn) return;
+  // 更新设置页「会员中心」条目右侧的当前状态
+  const note = document.getElementById('settings-member-note');
+  if (!note) return;
   if (isMember) {
-    btn.textContent = '👑 会员';
-    btn.className = 'btn btn-sm member-btn member-on';
+    note.innerHTML = '<span class="settings-item-note on" style="font-weight:600;">永久会员</span>';
   } else {
-    btn.textContent = '👤 非会员 · 镜头 ' + useCountShotWrite + '/' + FREE_LIMIT + ' · Excel ' + useCountExcelImport + '/' + FREE_LIMIT;
-    btn.className = 'btn btn-sm member-btn member-off';
+    note.innerHTML = '非会员（试用中）<span class="settings-arrow">›</span>';
   }
 }
 
@@ -2300,7 +2336,7 @@ function openMemberCenter() {
   const m = document.getElementById('member-center-modal');
   if (!m) return;
   const st = document.getElementById('member-status');
-  st.textContent = isMember ? '会员（永久有效）' : '非会员（试用中）';
+  st.textContent = isMember ? '永久会员' : '非会员（试用中）';
   st.className = 'member-status ' + (isMember ? 'on' : 'off');
   document.getElementById('member-usage').textContent = isMember
     ? '会员权益：全部功能不限次数使用'
