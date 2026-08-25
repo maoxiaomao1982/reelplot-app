@@ -930,7 +930,7 @@ let pendingWriteVideo = null;  // 镜头编写面板待添加的参考视频文�
 // ===== 会员 / 试用额度 =====
 const IAP_PRODUCT_ID = 'com.james.reelplot.member.lifetime'; // 非消耗型内购：永久会员
 const hasIAPBridge = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.iapBridge);
-let isMember = !hasIAPBridge;      // iOS App：默认非会员，凭购买记录解锁；网页版：无内购通道，不限制
+let isMember = false;                // 默认非会员：App 内凭 IAP 购买解锁；网页版用于功能演示与测试
 let useCountShotWrite = 0;         // 「镜头编写」试用次数（非会员上限 FREE_LIMIT）
 let useCountExcelImport = 0;       // 「Excel 导入」试用次数（非会员上限 FREE_LIMIT）
 const FREE_LIMIT = 3;              // 非会员免费试用额度
@@ -2438,7 +2438,12 @@ function setMember(v) {
 // ===== 苹果内购（IAP）桥接 =====
 function iapPurchase() {
   if (isMember) { showToast('你已是会员，无需重复开通', 'success'); return; }
-  if (!hasIAPBridge) { showToast('会员开通暂仅支持 iOS App 内购买', 'info'); return; }
+  if (!hasIAPBridge) {
+    // 网页演示环境：无 App 内购通道，模拟开通永久会员，便于测试会员完整功能
+    setMember(true);
+    showToast('演示环境：已模拟开通永久会员', 'success');
+    return;
+  }
   try {
     window.webkit.messageHandlers.iapBridge.postMessage({ action: 'purchase', productId: IAP_PRODUCT_ID });
   } catch(e) {
