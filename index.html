@@ -803,9 +803,70 @@ function preloadLibraries() {
         <span class="settings-item-main" style="color:#b91c1c;">🗑️ 重置全部</span>
         <span class="settings-item-note">清空所有数据<span class="settings-arrow">›</span></span>
       </button>
+      <button class="settings-item" onclick="closeSettings(); openAbout();">
+        <span class="settings-item-main">ℹ️ 关于</span>
+        <span class="settings-item-note">版本与反馈<span class="settings-arrow">›</span></span>
+      </button>
     </div>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeSettings()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- About Modal -->
+<div class="modal-overlay" id="about-modal">
+  <div class="modal" style="max-width:360px;">
+    <h3>ℹ️ 关于</h3>
+    <div style="text-align:center;padding:10px 0 2px;">
+      <div style="font-size:52px;line-height:1;">🎬</div>
+      <div style="font-weight:700;font-size:18px;margin-top:10px;">Reelplot</div>
+      <div style="color:var(--text-light);font-size:13px;margin-top:5px;">当前版本 <span style="color:var(--text);font-weight:600;">1.0</span></div>
+    </div>
+    <div class="settings-list" style="margin-top:16px;">
+      <button class="settings-item" onclick="openPrivacy()">
+        <span class="settings-item-main">🔒 隐私协议</span>
+        <span class="settings-item-note">查看隐私政策<span class="settings-arrow">›</span></span>
+      </button>
+      <button class="settings-item" onclick="openFeedback()">
+        <span class="settings-item-main">💬 意见反馈</span>
+        <span class="settings-item-note">告诉我们你的想法<span class="settings-arrow">›</span></span>
+      </button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeAbout()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Privacy Modal -->
+<div class="modal-overlay" id="privacy-modal">
+  <div class="modal" style="max-width:360px;">
+    <h3>🔒 隐私协议</h3>
+    <div style="text-align:left;font-size:13px;line-height:1.8;color:var(--text-light);max-height:340px;overflow-y:auto;margin-top:4px;">
+      <p><strong style="color:var(--text);">1. 数据存储</strong><br>Reelplot 的所有数据（剧本、镜头、进度等）仅保存在您设备的本地，不会上传至任何服务器。</p>
+      <p><strong style="color:var(--text);">2. 个人信息</strong><br>本应用不收集、不存储、不共享您的任何个人信息。</p>
+      <p><strong style="color:var(--text);">3. 会员购买</strong><br>会员购买通过 Apple App Store 官方渠道完成，支付与账户信息由 Apple 处理，本应用无法获取。</p>
+      <p><strong style="color:var(--text);">4. 联系我们</strong><br>如有隐私相关问题，请发送邮件至 maoxiaomao198206@163.com，我们会在 3 个工作日内回复。</p>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closePrivacy()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Feedback Modal -->
+<div class="modal-overlay" id="feedback-modal">
+  <div class="modal" style="max-width:360px;text-align:center;">
+    <h3>💬 意见反馈</h3>
+    <p style="color:var(--text-light);font-size:14px;line-height:1.7;margin-top:4px;">您的建议对我们非常重要！<br>请发送邮件至：</p>
+    <div style="font-size:16px;font-weight:600;color:var(--text);margin:12px 0;word-break:break-all;">maoxiaomao198206@163.com</div>
+    <div style="display:flex;gap:10px;justify-content:center;">
+      <button class="btn btn-primary" onclick="copyFeedbackEmail()">📋 复制邮箱</button>
+      <a class="btn btn-outline" href="mailto:maoxiaomao198206@163.com" style="text-decoration:none;">✉️ 发送邮件</a>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeFeedback()">关闭</button>
     </div>
   </div>
 </div>
@@ -2380,6 +2441,32 @@ function openSettings() {
   m.classList.add('show');
 }
 function closeSettings() { document.getElementById('settings-modal').classList.remove('show'); }
+
+// ===== 关于 / 隐私协议 / 意见反馈 =====
+function openAbout() { document.getElementById('about-modal').classList.add('show'); }
+function closeAbout() { document.getElementById('about-modal').classList.remove('show'); }
+function openPrivacy() { document.getElementById('privacy-modal').classList.add('show'); }
+function closePrivacy() { document.getElementById('privacy-modal').classList.remove('show'); }
+function openFeedback() { document.getElementById('feedback-modal').classList.add('show'); }
+function closeFeedback() { document.getElementById('feedback-modal').classList.remove('show'); }
+function copyFeedbackEmail() {
+  const email = 'maoxiaomao198206@163.com';
+  const done = function () { showToast('邮箱已复制', 'success'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(email).then(done, function () {
+      // 剪贴板被拒时降级
+      const ta = document.createElement('textarea');
+      ta.value = email; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) { showToast('复制失败，请手动复制', 'error'); }
+      document.body.removeChild(ta);
+    });
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = email; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { showToast('复制失败，请手动复制', 'error'); }
+    document.body.removeChild(ta);
+  }
+}
 
 function renderMemberUI() {
   // 更新设置页「开启Reelplot会员」条目：已购用户不显示会员入口，只显示「恭喜你，成为Reelplot永久会员」
