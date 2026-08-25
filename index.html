@@ -196,7 +196,7 @@ function preloadLibraries() {
 
   /* ===== Stepper ===== */
   .stepper-container { background: var(--surface); padding: 24px; display: flex; justify-content: center; }
-  .stepper { display: flex; align-items: center; max-width: 900px; width: 100%; }
+  .stepper { display: flex; align-items: flex-start; max-width: 900px; width: 100%; }
   .step { display: flex; flex-direction: column; align-items: center; cursor: pointer; flex: 1; transition: all 0.3s; }
   .step-circle {
     width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
@@ -208,7 +208,7 @@ function preloadLibraries() {
   .step-label { margin-top: 8px; font-size: 14px; font-weight: 600; color: var(--text-light); transition: all 0.3s; }
   .step.active .step-label { color: var(--primary); }
   .step.completed .step-label { color: var(--success); }
-  .step-connector { flex: 1; height: 3px; background: var(--border); margin: 0 -8px; margin-bottom: 28px; border-radius: 2px; transition: background 0.3s; position: relative; top: -24px; }
+  .step-connector { flex: 1; height: 3px; background: var(--border); margin: 0 -8px; margin-top: 22px; border-radius: 2px; transition: background 0.3s; }
   .step-connector.completed { background: var(--success); }
 
   /* ===== Main ===== */
