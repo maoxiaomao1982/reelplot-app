@@ -1009,18 +1009,23 @@ const FREE_LIMIT = 3;              // 非会员免费试用额度
 
 // ===== Persistence =====
 function saveData() {
-  localStorage.setItem('vp_script_text', scriptText);
-  localStorage.setItem('vp_script_source', scriptSource);
-  localStorage.setItem('vp_excel', JSON.stringify(excelData));
-  localStorage.setItem('vp_shots', JSON.stringify(shots));
-  localStorage.setItem('vp_edit_tasks', JSON.stringify(globalEditTasks));
-  localStorage.setItem('vp_summary_done', JSON.stringify(summaryDone));
-  localStorage.setItem('vp_stage', String(currentStage));
-  localStorage.setItem('vp_shoot_view_mode', shootViewMode === 'summary' ? 'summary' : 'breakdown');
-  // 会员 / 试用额度
-  localStorage.setItem('vp_is_member', isMember ? '1' : '0');
-  localStorage.setItem('vp_use_shot', String(useCountShotWrite));
-  localStorage.setItem('vp_use_excel', String(useCountExcelImport));
+  try {
+    localStorage.setItem('vp_script_text', scriptText);
+    localStorage.setItem('vp_script_source', scriptSource);
+    localStorage.setItem('vp_excel', JSON.stringify(excelData));
+    localStorage.setItem('vp_shots', JSON.stringify(shots));
+    localStorage.setItem('vp_edit_tasks', JSON.stringify(globalEditTasks));
+    localStorage.setItem('vp_summary_done', JSON.stringify(summaryDone));
+    localStorage.setItem('vp_stage', String(currentStage));
+    localStorage.setItem('vp_shoot_view_mode', shootViewMode === 'summary' ? 'summary' : 'breakdown');
+    // 会员 / 试用额度
+    localStorage.setItem('vp_is_member', isMember ? '1' : '0');
+    localStorage.setItem('vp_use_shot', String(useCountShotWrite));
+    localStorage.setItem('vp_use_excel', String(useCountExcelImport));
+  } catch(e) {
+    // 存储异常（如空间不足）不影响内存状态与界面刷新
+    console.warn('saveData error:', e);
+  }
 }
 function loadData() {
   try {
@@ -1061,8 +1066,9 @@ function loadData() {
     const sd = localStorage.getItem('vp_summary_done');
     if (sd) { try { summaryDone = JSON.parse(sd) || {}; } catch(e) { summaryDone = {}; } }
     const vm = localStorage.getItem('vp_shoot_view_mode'); if (vm === 'summary') shootViewMode = 'summary'; else shootViewMode = 'breakdown';
-    // 会员 / 试用额度（网页版始终视为已解锁，不读取本地会员标记）
-    const im = localStorage.getItem('vp_is_member'); if (hasIAPBridge) isMember = im === '1';
+    // 会员 / 试用额度（App 内凭 IAP 权益；网页演示环境同样持久化，刷新后不丢失）
+    const im = localStorage.getItem('vp_is_member');
+    isMember = im === '1';
     const us = localStorage.getItem('vp_use_shot'); if (us != null) useCountShotWrite = parseInt(us) || 0;
     const ue = localStorage.getItem('vp_use_excel'); if (ue != null) useCountExcelImport = parseInt(ue) || 0;
   } catch(e) { scriptText = ''; shots = []; currentStage = 0; scriptSource = ''; excelData = null; globalEditTasks = { editCut: false, editColor: false, editSound: false }; summaryDone = {}; }
@@ -2516,16 +2522,7 @@ function renderMemberUI() {
 function openMemberCenter() {
   const m = document.getElementById('member-center-modal');
   if (!m) return;
-  const st = document.getElementById('member-status');
-  st.textContent = isMember ? '永久会员' : '非会员（试用中）';
-  st.className = 'member-status ' + (isMember ? 'on' : 'off');
-  document.getElementById('member-usage').textContent = isMember
-    ? '会员权益：全部功能不限次数使用'
-    : '试用额度：镜头编写 ' + useCountShotWrite + '/' + FREE_LIMIT + ' · Excel 导入 ' + useCountExcelImport + '/' + FREE_LIMIT;
-  const buyBtn = document.getElementById('member-buy-btn');
-  buyBtn.textContent = isMember ? '✓ 已是会员' : '立即开通';
-  buyBtn.disabled = isMember;
-  buyBtn.style.opacity = isMember ? '0.6' : '1';
+  refreshMemberCenter();
   m.classList.add('show');
   // 每次打开时向原生层查询最新价格与购买状态
   if (hasIAPBridge) { try { window.webkit.messageHandlers.iapBridge.postMessage({ action: 'query' }); } catch(e) {} }
@@ -2545,7 +2542,28 @@ function setMember(v) {
   renderMemberUI();
   // 若会员弹窗正打开，同步刷新展示
   const m = document.getElementById('member-center-modal');
-  if (m && m.classList.contains('show')) openMemberCenter();
+  if (m && m.classList.contains('show')) refreshMemberCenter();
+}
+
+// 渲染会员中心内容（弹窗内状态/权益/按钮）——独立函数，供打开与即时刷新共用
+function refreshMemberCenter() {
+  const st = document.getElementById('member-status');
+  if (st) {
+    st.textContent = isMember ? '永久会员' : '非会员（试用中）';
+    st.className = 'member-status ' + (isMember ? 'on' : 'off');
+  }
+  const usage = document.getElementById('member-usage');
+  if (usage) {
+    usage.textContent = isMember
+      ? '会员权益：全部功能不限次数使用'
+      : '试用额度：镜头编写 ' + useCountShotWrite + '/' + FREE_LIMIT + ' · Excel 导入 ' + useCountExcelImport + '/' + FREE_LIMIT;
+  }
+  const buyBtn = document.getElementById('member-buy-btn');
+  if (buyBtn) {
+    buyBtn.textContent = isMember ? '✓ 已是会员' : '立即开通';
+    buyBtn.disabled = isMember;
+    buyBtn.style.opacity = isMember ? '0.6' : '1';
+  }
 }
 
 // ===== 苹果内购（IAP）桥接 =====
@@ -2577,8 +2595,12 @@ function iapRestore() {
 window.iapGrantMember = function(granted) {
   if (granted && !isMember) {
     setMember(true);
-    showToast('👑 会员已开通，全部功能不限次数！', 'success');
+  } else if (granted) {
+    // 状态已同步，兜底刷新弹窗与设置页展示
+    refreshMemberCenter();
+    renderMemberUI();
   }
+  if (granted) showToast('👑 会员已开通，全部功能不限次数！', 'success');
 };
 // 原生层回调：内购价格（App Store 本地化价格）
 window.iapPriceLoaded = function(price) {
