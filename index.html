@@ -2340,7 +2340,7 @@ function renderMemberUI() {
     item.onclick = null;
     item.style.cursor = 'default';
     main.textContent = '👑 会员';
-    note.innerHTML = '<span class="settings-item-note on" style="font-weight:600;">永久会员</span>';
+    note.innerHTML = '<span class="settings-item-note on" style="font-weight:600;">当前状态：永久会员</span>';
   } else {
     item.onclick = function () { closeSettings(); openMemberCenter(); };
     item.style.cursor = '';
