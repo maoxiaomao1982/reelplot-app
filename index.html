@@ -2536,6 +2536,9 @@ function showMemberLimitModal(feature) {
 function closeLimitModal() { document.getElementById('limit-modal').classList.remove('show'); }
 function limitGoMember() { closeLimitModal(); openMemberCenter(); }
 
+// 会员开通成功后是否自动跳转到设置页（仅购买流程置 true，App 启动恢复权益不触发）
+let pendingMemberJump = false;
+
 function setMember(v) {
   isMember = !!v;
   saveData();
@@ -2543,6 +2546,13 @@ function setMember(v) {
   // 若会员弹窗正打开，同步刷新展示
   const m = document.getElementById('member-center-modal');
   if (m && m.classList.contains('show')) refreshMemberCenter();
+}
+
+// 方案B：购买成功后自动跳转到设置页，展示「恭喜你，成为Reelplot永久会员」
+function jumpToMemberSettings() {
+  closeMemberCenter();
+  openSettings();
+  showToast('👑 会员已开通，全部功能不限次数！', 'success');
 }
 
 // 渲染会员中心内容（弹窗内状态/权益/按钮）——独立函数，供打开与即时刷新共用
@@ -2569,15 +2579,17 @@ function refreshMemberCenter() {
 // ===== 苹果内购（IAP）桥接 =====
 function iapPurchase() {
   if (isMember) { showToast('你已是会员，无需重复开通', 'success'); return; }
+  pendingMemberJump = true;
   if (!hasIAPBridge) {
     // 网页演示环境：无 App 内购通道，模拟开通永久会员，便于测试会员完整功能
     setMember(true);
-    showToast('演示环境：已模拟开通永久会员', 'success');
+    jumpToMemberSettings();
     return;
   }
   try {
     window.webkit.messageHandlers.iapBridge.postMessage({ action: 'purchase', productId: IAP_PRODUCT_ID });
   } catch(e) {
+    pendingMemberJump = false;
     showToast('无法唤起购买，请稍后再试', 'error');
   }
 }
@@ -2600,7 +2612,14 @@ window.iapGrantMember = function(granted) {
     refreshMemberCenter();
     renderMemberUI();
   }
-  if (granted) showToast('👑 会员已开通，全部功能不限次数！', 'success');
+  if (granted) {
+    if (pendingMemberJump) {
+      pendingMemberJump = false;
+      jumpToMemberSettings();
+    } else {
+      showToast('👑 会员已开通，全部功能不限次数！', 'success');
+    }
+  }
 };
 // 原生层回调：内购价格（App Store 本地化价格）
 window.iapPriceLoaded = function(price) {
@@ -2611,6 +2630,7 @@ window.iapPriceLoaded = function(price) {
 };
 // 原生层回调：购买失败 / 取消
 window.iapPurchaseFailed = function(reason) {
+  pendingMemberJump = false; // 购买失败/取消，清除跳转标记
   if (reason === 'cancelled') { showToast('已取消购买', 'info'); }
   else if (reason === 'pending') { showToast('购买待确认（如家长批准中），确认后将自动开通', 'info'); }
   else { showToast('购买未完成：' + reason, 'error'); }
